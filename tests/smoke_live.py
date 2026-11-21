@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 
 SECTIONS = {
     "See it": ["Arrived from vendors", "Where it piled up", "All 16 items at a glance"],
-    "Plan it": ["Average idle stock", "What the planner says, one month at a time", "Download the plan (Excel)"],
+    "Plan it": ["Average idle stock", "What the planner says, one month at a time", "Download the plan (Excel)", "How good is the forecast?"],
     "Requisition": ["Items needed", "To buy", "Where Lumino's ratios and the site disagree", "Download the buy list (Excel)"],
     "Match the sets": ["agree with what the site really used", "Some items only work as a set"],
     "About the data": ["Where the numbers come from"],
