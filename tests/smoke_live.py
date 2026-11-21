@@ -50,6 +50,10 @@ def main(url: str, mobile: bool) -> int:
                 except Exception:
                     pass
                 page.wait_for_timeout(2500)
+            try:   # wait for the last thing on the screen, so a slow first calculation is not mistaken for a missing one
+                page.get_by_text(expected[-1]).first.wait_for(timeout=60000)
+            except Exception:
+                pass
             text = page.inner_text("body")
             for must in expected:
                 if must not in text:

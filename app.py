@@ -339,7 +339,7 @@ if section == "Requisition":
         "the tender lists. Yardstick works out every part that is needed, takes away what is already in the stores, and lists what to buy and "
         "the last day to order each item so the deadline holds."
     )
-    b1, b2 = st.columns(2)
+    b1, b2, b3 = st.columns(3)
     poles = b1.number_input(
         "Poles on the BOQ", min_value=0, max_value=500000, value=1700, step=100, key="boq_poles",
         help="1,700 is an example, the size named in the problem statement. Type the real number from the tender.",
@@ -347,6 +347,10 @@ if section == "Requisition":
     days_left = b2.number_input(
         "Days until the material must be on site", min_value=7, max_value=720, value=90, step=7, key="boq_days",
         help="Each item's usual lead time is taken off this to give its order-by date.",
+    )
+    handoff = b3.number_input(
+        "Days procurement needs to place the order", min_value=0, max_value=30, value=7, step=1, key="boq_handoff",
+        help="Lumino's procurement team asks for 7 to 10 days. The list must reach them this long before the order-by date.",
     )
 
     with st.expander("More BOQ lines (optional): anything entered here is used as the requirement"):
@@ -386,7 +390,7 @@ if section == "Requisition":
         )
         held = st.checkbox("Count stock still with contractors as available", value=False, key="boq_held")
 
-    req = reqs.requisition(ledger, sets_table, boq, basis=basis, per_pole=per_pole, with_contractors=held, days_left=int(days_left))
+    req = reqs.requisition(ledger, sets_table, boq, basis=basis, per_pole=per_pole, with_contractors=held, days_left=int(days_left), handoff_days=int(handoff))
     stock_label = month_label(req.stock_month)
     if req.unknown:
         st.warning(f"Not items of this project, so left out: {', '.join(req.unknown)}.")
@@ -410,7 +414,11 @@ if section == "Requisition":
             )
         elif len(soon):
             first = soon.sort_values("order_by").iloc[0]
-            st.info(f"Everything to buy can still arrive in time. First order date: **{first.order_by:%d %b}** ({short_item(first['item'], 40)}).")
+            when = first["send_by"] if handoff else first["order_by"]
+            st.info(
+                f"Everything to buy can still arrive in time. First {'list to procurement' if handoff else 'order'} date: "
+                f"**{when:%d %b}** ({short_item(first['item'], 40)})."
+            )
         else:
             st.success("The stores already cover this BOQ. Nothing to buy.")
 
@@ -427,6 +435,7 @@ if section == "Requisition":
                     "Where the number comes from": ln["source"],
                     f"In stock ({stock_label})": [qty(v, u) for v, u in zip(ln["on_hand"], ln["unit"])],
                     "To buy": [qty(v, u) if v > 0 else "–" for v, u in zip(ln["buy"], ln["unit"])],
+                    "Left in stock after": [qty(v, u) for v, u in zip(ln["left_over"], ln["unit"])],
                     "Order by / status": ln["status"],
                 }
             ),
@@ -465,7 +474,8 @@ if section == "Requisition":
             f"- **The BOQ is the requirement.** A line entered on the BOQ is used as it is. Everything else is worked out from it and labelled with where it came from: "
             f"a set ratio (the file's, or the site's real use), or an estimate from what this project used per pole.\n"
             f"- **Stock in hand** is the last month in the data ({stock_label}): every godown plus the closing store. Stock still with contractors is left out unless you tick the box.\n"
-            f"- **Order by** = the day the material is needed minus the item's usual lead time. If that day has passed, the line is marked too late.\n"
+            f"- **Order by** = the day the material is needed minus the item's usual lead time. **Send to procurement by** = that day minus the days procurement needs to place an order. If that day has passed, the line is marked too late.\n"
+            f"- **No over-buying.** Only what is missing after stock is bought, so the buy list leaves nothing idle. The site's real use is the safer choice for parts that come with a set: the file's ratios can buy several times what the site ever used.\n"
             f"- **Not in the data:** a bill of quantities, prices, and orders still on the way. The 1,700 poles is an example figure, not a Lumino BOQ, and open orders are not taken off the buy list.\n"
             f"- **Next:** read the BOQ straight from Lumino's ERP extract, which their ERP team already updates every day."
         )

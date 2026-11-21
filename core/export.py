@@ -75,6 +75,11 @@ def requisition_assumptions(req: Requisition) -> list[str]:
         f"Parts that come with a set (eye hooks, lugs, bolts) use the ratio {BASES[req.basis].lower()}. The sheet 'Ratio check' shows both, "
         "because the data pack's ratios often disagree with what the site really used.",
     ]
+    if req.handoff_days:
+        out.append(
+            f"Procurement needs {req.handoff_days} days to place an order, so the list must reach them that long before the order-by date "
+            "('Send to procurement by')."
+        )
     if (req.lines["source"] == POLE).any():
         out.append("Items marked 'Per pole (site)' are estimates from what this project used per pole, not BOQ lines. Replace them with the BOQ's own figures.")
     out += [
@@ -92,8 +97,9 @@ def requisition_workbook(req: Requisition) -> bytes:
         {
             "Item": lines["item"], "Unit": lines["unit"], "Needed": lines["needed"], "Where the number comes from": lines["source"],
             "In godowns": lines["in_godowns"], "With contractors": lines["with_contractors"], "To buy": lines["buy"],
-            "Lead time (days)": lines["lead_days"],
+            "Left in stock after": lines["left_over"], "Lead time (days)": lines["lead_days"],
             "Order by": [f"{d:%d %b %Y}" if k != "covered" else "" for d, k in zip(lines["order_by"], lines["kind"])],
+            "Send to procurement by": [f"{d:%d %b %Y}" if k != "covered" else "" for d, k in zip(lines["send_by"], lines["kind"])],
             "Status": lines["status"],
         }
     )

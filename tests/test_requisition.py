@@ -118,6 +118,15 @@ def test_the_deadline_decides_what_is_too_late():
     assert s["lines"] == len(req.lines) and s["late"] == 1 and s["to_buy"] + s["covered"] == s["lines"]
 
 
+def test_procurement_needs_days_before_the_order_date():
+    req = run({"POLE": 1000}, days_left=100, handoff_days=7)
+    x = line(req, "X")                                        # order by day 40, so the list is due on day 33
+    assert x["send_by"] == TODAY + timedelta(days=33) and x["status"] == f"Send to procurement by {x['send_by']:%d %b}"
+    assert line(req, "POLE")["late_days"] == 57               # 50 days past the order date, plus the 7 procurement days
+    assert line(run({"POLE": 1000}, days_left=66), "X")["kind"] == "order"                    # order by day 6
+    assert line(run({"POLE": 1000}, days_left=66, handoff_days=7), "X")["kind"] == "late"     # list was due yesterday
+
+
 def test_an_item_code_not_in_the_data_is_reported_not_guessed():
     req = run({"NOPE": 5, "POLE": 10})
     assert req.unknown == ["NOPE"] and "NOPE" not in set(req.lines["item_code"])

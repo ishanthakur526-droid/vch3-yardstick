@@ -34,7 +34,7 @@ BASES = {"observed": "As the site really used them", "stated": "As in Lumino's f
 BOQ, FILE, SITE, POLE = "BOQ line", "Set ratio (file)", "Set ratio (site)", "Per pole (site)"
 COLUMNS = [
     "item_code", "item", "unit", "source", "needed", "at_file", "at_site", "factor", "check", "in_godowns", "with_contractors",
-    "on_hand", "buy", "left_over", "lead_days", "order_by", "late_days", "kind", "status",
+    "on_hand", "buy", "left_over", "lead_days", "order_by", "send_by", "late_days", "kind", "status",
 ]
 
 
@@ -47,6 +47,7 @@ class Requisition:
     basis: str
     with_contractors: bool
     unknown: list[str] = field(default_factory=list)   # BOQ lines whose item code is not in the data
+    handoff_days: int = 0                              # days procurement needs to place an order once it has the list
 
 
 def _up(x: float, step: float) -> float:
@@ -78,9 +79,11 @@ def requisition(
     with_contractors: bool = False,
     today: date | None = None,
     days_left: int = 90,
+    handoff_days: int = 0,
     pole_code: str = POLE_CODE,
 ) -> Requisition:
-    """`boq` maps item code to quantity. `days_left` is how long until the material must be on site."""
+    """`boq` maps item code to quantity. `days_left` is how long until the material must be on site; `handoff_days` is how
+    long procurement needs to place an order once it has the list (Lumino's team asks for 7 to 10)."""
     if basis not in BASES:
         raise ValueError(f"basis must be one of {list(BASES)}")
     today = today or date.today()
@@ -129,13 +132,14 @@ def requisition(
         missing = max(0.0, qty - on_hand)
         lead = int(items.loc[code, "lead_time_days"])
         order_by = needed_by - timedelta(days=lead)
-        late = max(0, (today - order_by).days)
+        send_by = order_by - timedelta(days=int(handoff_days))
+        late = max(0, (today - send_by).days)
         if missing <= 1e-9:
             kind, status = "covered", "In stock"
         elif late > 0:
             kind, status = "late", f"Too late by {late} days"
         else:
-            kind, status = "order", f"Order by {order_by:%d %b}"
+            kind, status = "order", (f"Send to procurement by {send_by:%d %b}" if handoff_days else f"Order by {order_by:%d %b}")
         rows.append(
             {
                 "item_code": code, "item": str(items.loc[code, "item_name"]), "unit": unit, "source": source[code],
@@ -143,7 +147,7 @@ def requisition(
                 "factor": factor.get(code, nan), "check": ratio_check(factor[code]) if code in factor else "",
                 "in_godowns": in_godowns, "with_contractors": held, "on_hand": on_hand,
                 "buy": _up(missing, step) if missing > 1e-9 else 0.0, "left_over": max(0.0, on_hand - qty),
-                "lead_days": lead, "order_by": order_by, "late_days": late, "kind": kind, "status": status,
+                "lead_days": lead, "order_by": order_by, "send_by": send_by, "late_days": late, "kind": kind, "status": status,
             }
         )
 
@@ -156,7 +160,7 @@ def requisition(
             .sort_values(["_k", "_i"]).drop(columns=["_k", "_i"]).reset_index(drop=True)
         )
     return Requisition(lines=lines, stock_month=last, today=today, needed_by=needed_by, basis=basis,
-                       with_contractors=with_contractors, unknown=unknown)
+                       with_contractors=with_contractors, unknown=unknown, handoff_days=int(handoff_days))
 
 
 def summary(req: Requisition) -> dict[str, int]:
