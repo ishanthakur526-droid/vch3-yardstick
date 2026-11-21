@@ -1,6 +1,6 @@
 # HANDOVER (updated hourly)
 
-Last update: 12:30 IST, Sat 21 Nov 2026.
+Last update: 13:30 IST, Sat 21 Nov 2026.
 
 ## Where things stand
 - **Pick:** Lumino Industries, "1,700 Poles" (picked at 11:00). Product name: **Yardstick**.
@@ -19,7 +19,8 @@ Last update: 12:30 IST, Sat 21 Nov 2026.
 - `python tools/make_bundle.py <csv folder>` writes `data_local/bundle.txt` (git-ignored). The same text goes into the host secret `LUMINO_BUNDLE`; `data_local/streamlit_secrets.toml` holds the ready-to-paste secrets block.
 - Rules from the pack: do not dedupe rows; ignore zero rows; clip small negative stock to 0; no order dates; usage has no godown.
 - Set ratios in `sets.csv` disagree with real use for 7 of 8 pairs. Asked at Lumino's desk (11:47): no direct answer. Their rule: a line on the BOQ is the requirement, and the file's ratios come from the tendering engineers' experience. Still open: ring lugs 0.25 vs 5.7 per three-phase box, single-phase lugs 0.25 vs 0.65, whether the three bolt types are alternatives or all needed, tonnes vs kg. So Requisition shows the file's ratio and the site's side by side and never overwrites either.
-- Other desk answers (11:47): the user is head-office procurement, who work per project from a BOQ (sites and poles); they keep no spare stock and cannot miss the deadline; the data lives in their ERP, updated daily and checked weekly. No clear OK yet to show real numbers on the public link (the pack says it is one real Lumino project): ask at the 13:20 visit; if no, mask names and scale quantities.
+- Other desk answers (11:47): the user is head-office procurement, who work per project from a BOQ (sites and poles); they keep no spare stock and cannot miss the deadline; the data lives in their ERP, updated daily and checked weekly. Real numbers on the public link: OK given verbally at the desk (about 13:20, reported by Ishan), so no masking is needed.
+- Second visit (13:12): on the bolts they said "I cannot go by three" (all three types per clamp would leave one spare and unused), so stock first; whether the types are alternatives is still not confirmed. They expect the list to be on time (procurement needs 7 to 10 days to place an order), no overbuying, and vendor price comparison (the data has no prices). Requisition now takes the days procurement needs (default 7) and shows what is left in stock after the buy.
 
 ## Decisions worth knowing
 - Replay is whole-site for scoring (idle and shortage), with orders and moves decided per godown. Use per godown is an estimate (usage has no godown).
