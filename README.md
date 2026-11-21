@@ -14,6 +14,11 @@ On Lumino's real project data (Kanpur, Mar 2023 to Oct 2026, 16 items, 6 godowns
 | 2. Plan it | **Plan it** | Replays the project. Each month the planner sees only what was known by then and says what to **order** (because of lead time), **hold**, or **move** from another godown, with a one-line reason per godown. Then it is scored against what really happened: idle stock **and** shortage. A saving that starves the site does not count. |
 | 3. Match the sets | **Match the sets** | Compares Lumino's set ratios with what the site really used, and tracks each child item against its parents godown by godown. Only items that follow their parent closely are judged; the rest are listed for Lumino to explain. |
 
+## Added after the desk visit: Requisition
+Lumino's head-office procurement starts from a bill of quantities (how many poles, plus the other lines the tender lists), not from a monthly forecast. So **Requisition** takes a BOQ and returns a buy list: every part that is needed, minus what is already in the stores, with the last day to order each item so the deadline holds. A line typed on the BOQ always wins. Parts that come with a set use the set ratio (Lumino's file or what the site really used; both are shown). Everything else is estimated from what this project used per pole and is labelled as an estimate.
+
+Example on the real data: a BOQ of 1,700 poles needs 16 lines. 13 are already in stock, 3 must be bought, and 1 of those cannot arrive in 90 days at its usual lead time. Read through Lumino's own file, the same BOQ would need 220 ring lugs where the site really used about 5,000, and thousands of tonnes of M16 bolts where the site used about half a tonne (the file's unit looks mixed up).
+
 ## Results (default settings, real data)
 - 13 of 16 items: median **54% less idle stock** with under 1% of use unsupplied.
 - Poles: average idle stock 29,572 → 15,347 (−48%), peak 48,991 → 32,490, zero shortage.
@@ -24,9 +29,10 @@ On Lumino's real project data (Kanpur, Mar 2023 to Oct 2026, 16 items, 6 godowns
 - `core/ledger.py`: the monthly ledger from the data pack's own two sums (godown stock, stock with contractors).
 - `core/planner.py`: the replay. At month *t* it reads only months before *t* (tests change the future and check nothing earlier moves). Orders cover lead time plus a month of forecast use plus a safety margin, never more in total than the project really bought; stock above one godown's need moves to a godown about to run short.
 - `core/sets.py`: ratio calibration against real use, pairing strength, running account per godown.
-- `core/explain.py`, `core/export.py`: the reasons per godown and the Excel export.
+- `core/explain.py`, `core/export.py`: the reasons per godown and the Excel exports (the plan, and the buy list).
+- `core/requisition.py`: BOQ to buy list. Set ratios (file and site), per-pole estimates, stock in hand, lead times and order-by dates; every line says where its number came from.
 - `app.py`: the Streamlit screens. No logic in it.
-- `tests/`: 25 tests on made-up scenarios and, when the data is present, on Lumino's real numbers.
+- `tests/`: 38 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
 
 No AI model sits in the numbers: every figure is computed by code and can be traced to the records.
 
