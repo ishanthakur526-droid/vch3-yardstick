@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 .venv/
 venv/
 __pycache__/
@@ -12,7 +12,7 @@ __pycache__/
 .streamlit/secrets.toml
 *.key
 
-# Company data stays out of the repo (only the encrypted bundle in data/ is committed)
+# Company data stays out of the repo: the app reads it from a host secret or from data_local/ (git-ignored)
 lumino_private/
 uploads/
 data_local/
