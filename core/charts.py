@@ -96,6 +96,30 @@ def replay_chart(monthly: pd.DataFrame, takeover: int, eval_start: int, unit: st
     return _base(fig, 620)
 
 
+def set_calendar(cal: pd.DataFrame) -> go.Figure:
+    """For every month: how many godown accounts were out of balance, serious or on watch."""
+    x = _dates(cal["month"])
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=x, y=cal["serious"], name="Serious", marker_color=COLOR["short"]))
+    fig.add_trace(go.Bar(x=x, y=cal["watch"], name="Watch", marker_color=COLOR["issued"]))
+    fig.update_layout(barmode="stack", bargap=0.25, yaxis_title="godown accounts out of balance")
+    return _base(fig, 260).update_layout(margin=dict(l=8, r=8, t=40, b=8))
+
+
+def set_account(view_account: pd.DataFrame, child_name: str, watch: float, serious: float) -> go.Figure:
+    """How far each godown's account for one child is off, as a share of every set issued so far."""
+    fig = go.Figure()
+    for place, sub in view_account.groupby("godown"):
+        if place == "All godowns":
+            continue
+        fig.add_trace(go.Scatter(x=_dates(sub["month"]), y=sub["off"], name=short_godown(place), mode="lines"))
+    for level, label, color in ((watch, "watch", "rgba(245,158,11,0.9)"), (serious, "serious", "rgba(239,68,68,0.9)")):
+        for sign in (1, -1):
+            fig.add_hline(y=sign * level, line_dash="dot", line_color=color, line_width=1)
+    fig.update_yaxes(tickformat=".0%", title=f"{child_name}: ahead (+) or behind (−) the parents")
+    return _base(fig, 340)
+
+
 def godown_heatmap(grid_item: pd.DataFrame, unit: str) -> go.Figure:
     """Godown by month: where it piled up."""
     piv = grid_item.pivot(index="godown", columns="month", values="stock")

@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from core import charts, explain
+from core import charts, explain, sets as setcheck
 from core.bundle import load_tables
 from core.fmt import indian, month_label, short_godown, short_item
 from core.ledger import build_ledger, data_notes, item_grid, item_site, ledger_table, overview, peak_idle
@@ -84,7 +84,7 @@ st.caption(
     "built at Vibe Coders Hackathon 3"
 )
 
-tab_see, tab_plan, tab_about = st.tabs(["See it", "Plan it", "About the data"])
+tab_see, tab_plan, tab_sets, tab_about = st.tabs(["See it", "Plan it", "Match the sets", "About the data"])
 
 # --------------------------------------------------------------------------------------------
 with tab_see:
@@ -289,6 +289,123 @@ with tab_plan:
             f"are inherited too. Scoring starts after that.\n"
             f"- **Use by godown is an estimate.** Lumino records use for the whole project only, so each month's use is split by what each godown handed out.\n"
             f"- **Contractor-held stock** is part of the real idle figure. In the plan, contractors draw what the site uses, so none is held back."
+        )
+
+# --------------------------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def run_calibration(_ledger, sets_table: pd.DataFrame) -> pd.DataFrame:
+    return setcheck.calibrate(_ledger, sets_table)
+
+
+@st.cache_data(show_spinner=False)
+def run_balance(_ledger, sets_table: pd.DataFrame, parent: str, basis: str, loose: bool):
+    return setcheck.balance(_ledger, sets_table, parent, basis, judge=("strong", "loose") if loose else ("strong",))
+
+
+with tab_sets:
+    cal = run_calibration(ledger, sets_table)
+    n_pairs, n_agree = len(cal), int(cal["agrees"].sum())
+    st.markdown(
+        "**Some items only work as a set.** A pole clamp is no use without its eye hook and bolts; if one runs short, "
+        "the whole set waits however much of the rest is lying in the store. This checks, godown by godown and month by month, "
+        "whether the children went out in the ratio their parents needed."
+    )
+    st.warning(
+        f"**Lumino's ratios agree with what the site really used for only {n_agree} of {n_pairs} pairs.** The data pack says to compare them "
+        "with real use and ask. Below are both: the ratio as given, and the ratio the site's own use implies. Which one is right for each "
+        "item is a question for Lumino's people."
+    )
+    ratio_table = pd.DataFrame(
+        {
+            "Set": cal["parent_name"].map(lambda n: short_item(n, 34)),
+            "Child": cal["child_name"].map(lambda n: short_item(n, 40)),
+            "Unit": cal["child_unit"],
+            "Ratio as given": [f"{v:g}" for v in cal["stated"]],
+            "Ratio from real use": [f"{v:.4g}" for v in cal["observed"]],
+            "Off by": [f"{(f if f >= 1 else 1 / f):.1f}× " + ("too high" if f < 1 else "too low") if not a else "agrees" for f, a in zip(cal["factor"], cal["agrees"])],
+            "Follows its parent month to month": [f"{p} ({c:.2f})" if pd.notna(c) else "–" for p, c in zip(cal["pairing"], cal["monthly_correlation"])],
+        }
+    )
+    st.dataframe(ratio_table, hide_index=True)
+    st.caption(
+        "'Off by' says how far the stated ratio is from real use. 'Follows its parent' is how closely a child's monthly use tracks its parent's: "
+        "only a child that tracks closely (0.8 or more) can be judged set by set."
+    )
+
+    parents = list(dict.fromkeys(cal["parent_code"]))
+    pnames = dict(zip(cal["parent_code"], cal["parent_name"]))
+    c1, c2, c3 = st.columns([3, 2, 2])
+    parent = c1.selectbox("Set", parents, format_func=lambda p: short_item(pnames[p], 60), key="set_parent")
+    basis_label = c2.radio("Ratio to use", ["From real use", "As Lumino gave it"], key="set_basis")
+    loose = c3.checkbox("Also judge loosely paired items", value=False, help="Children whose use only loosely follows the parent's. Expect many flags.")
+    view = run_balance(ledger, sets_table, parent, "observed" if basis_label == "From real use" else "stated", loose)
+
+    judged_children = [c for c, j in (view.judged or {}).items() if j]
+    if not judged_children:
+        st.info(
+            "None of this set's children is issued set by set (their use does not follow the parent's closely enough), so the records cannot say "
+            "whether this set is in balance. Ask Lumino how contractors draw them, or tick the box above to see what a loose reading gives."
+        )
+    else:
+        flags = setcheck.flagged(view)
+        cal_m = setcheck.calendar(view)
+        n_bad = int((cal_m["status"] != "balanced").sum())
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Months out of balance", f"{n_bad} of {len(cal_m)}", border=True, help="At least one godown is off on at least one judged child.")
+        k2.metric("Serious / watch", f"{int((flags['severity'] == 'serious').sum())} / {int((flags['severity'] == 'watch').sum())}", border=True,
+                  help=f"Godown-month accounts off by {setcheck.SERIOUS:.0%} / {setcheck.WATCH:.0%} of all sets issued so far.")
+        k3.metric("Judged children", ", ".join(short_item(view.names[c], 22) for c in judged_children), border=True)
+
+        st.plotly_chart(charts.set_calendar(cal_m))
+        st.caption("Every month at least one godown's account is off on a judged child. Serious: off by 30% or more of all sets issued so far. Watch: 15% or more.")
+
+        child = st.selectbox("Child", judged_children, format_func=lambda c: short_item(view.names[c], 60), key="set_child")
+        st.plotly_chart(charts.set_account(view.account[view.account["child"] == child], short_item(view.names[child], 28), setcheck.WATCH, setcheck.SERIOUS))
+
+        st.subheader("Every flag, worst first")
+        if len(flags):
+            shown = pd.DataFrame(
+                {
+                    "Month": flags["month"],
+                    "Godown": flags["godown"].map(short_godown),
+                    "Child": flags["child_name"].map(lambda n: short_item(n, 34)),
+                    "Severity": flags["severity"],
+                    "Off by": [f"{v:+.0%}" for v in flags["off"]],
+                    "Why": flags["reason"],
+                }
+            )
+            st.dataframe(shown, hide_index=True, height=320, column_config={"Why": st.column_config.TextColumn(width="large")})
+            st.download_button("Download the flags (CSV)", shown.to_csv(index=False).encode("utf-8"), file_name=f"yardstick_sets_{parent}.csv", mime="text/csv")
+        else:
+            st.success("No godown is out of balance on the judged children.")
+
+        st.subheader("What is stuck, in one month")
+        pick = st.select_slider("Month", options=ledger.months, value=ledger.months[len(ledger.months) // 2], format_func=month_label, key="set_month")
+        snap = setcheck.stuck(view, pick)
+        checked = [m for m in view.members if m == view.parent or (view.judged or {}).get(m)]
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Godown": snap["godown"].map(short_godown),
+                    "Sets that can be finished": [indian(v) for v in snap["sets_possible"]],
+                    "Limited by": snap["limiting"].map(lambda m: short_item(view.names[m], 30)),
+                    **{f"{short_item(view.names[m], 22)}: on hand ({view.units[m]})": [indian(v) for v in snap[f"have_{m}"]] for m in checked},
+                    **{f"{short_item(view.names[m], 22)}: waiting": [indian(v) for v in snap[f"waiting_{m}"]] for m in checked},
+                }
+            ),
+            hide_index=True,
+        )
+        st.caption("'Waiting' is the stock of each member that cannot be used until the limiting one arrives.")
+
+    with st.expander("How this works, and what it does not know"):
+        st.markdown(
+            "- **The account.** For each child at each godown: the sets' worth issued so far (child issued ÷ ratio) against the parents issued so far. "
+            "Negative means the child is behind and sets wait for it; positive means the child is ahead and piling up.\n"
+            "- **Ratios.** 'From real use' keeps the shape of Lumino's numbers and scales each child by one factor so the project's totals match what the "
+            "site used. 'As Lumino gave it' uses the file's numbers untouched.\n"
+            "- **Not every child is issued set by set.** Bolts, nuts and some lugs are handed out in bulk. Judging them month by month would flag almost everything, "
+            "so by default only children that follow their parent closely are judged, and the rest are listed above for Lumino to explain.\n"
+            "- **Contractor-held stock** is not split by godown in the records, so the account measures what left each godown, not what was installed."
         )
 
 # --------------------------------------------------------------------------------------------
