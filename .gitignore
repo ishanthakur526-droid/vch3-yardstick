@@ -1,0 +1,28 @@
+﻿# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache/
+
+# Secrets: never commit
+.env
+.env.*
+.streamlit/secrets.toml
+*.key
+
+# Company data stays out of the repo (only the encrypted bundle in data/ is committed)
+lumino_private/
+uploads/
+data_local/
+*.zip
+*.xlsx
+*.csv
+
+# Tooling and OS noise
+*.log
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
