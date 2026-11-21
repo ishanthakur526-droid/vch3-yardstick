@@ -113,6 +113,37 @@ def overview(ledger: Ledger) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def ledger_table(ledger: Ledger, code: str, godown: str | None = None) -> pd.DataFrame:
+    """The month-by-month table the screen shows: whole project, or one godown."""
+    if godown is None:
+        s = item_site(ledger, code)
+        return pd.DataFrame(
+            {
+                "Month": s["month"],
+                "Arrived from vendors": s["received"],
+                "Issued to contractors": s["issue"],
+                "Returned by contractors": s["ret"],
+                "Actually used": s["used"],
+                "Idle in godowns": s["godown_stock"],
+                "Held by contractors": s["with_contractors"],
+                "Total idle": s["idle_total"],
+                "Months of cover": s["cover_months"],
+            }
+        )
+    g = item_grid(ledger, code, godown)
+    return pd.DataFrame(
+        {
+            "Month": g["month"],
+            "Arrived from vendors": g["received"],
+            "Transfers in": g["tr_in"],
+            "Transfers out": g["tr_out"],
+            "Issued to contractors": g["issue"],
+            "Returned by contractors": g["ret"],
+            "Idle in this godown": g["stock"],
+        }
+    )
+
+
 def data_notes(ledger: Ledger) -> dict[str, object]:
     """Things a careful reader should know about the data (shown on the About tab)."""
     g = ledger.grid
