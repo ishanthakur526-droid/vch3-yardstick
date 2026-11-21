@@ -1,6 +1,6 @@
 # HANDOVER (updated hourly)
 
-Last update: 14:27 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 14:13).
+Last update: 14:22 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 14:13).
 
 ## Where things stand
 - **Pick:** Lumino Industries, "1,700 Poles" (picked at 11:00). Product name: **Yardstick**.
@@ -31,7 +31,7 @@ Last update: 14:27 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 1
 
 ## Plan (times IST)
 - Done: Requisition (12:30), procurement days (13:26), forecast check (14:19). The live link passed `tests/smoke_live.py` at desktop and phone width after the 14:19 push. Cut: the mask switch (Lumino said real numbers are fine) and the Hindi store-keeper note (the store-keeper is not the user).
-- Prompter: `submit-post1` filled 14:24 (neutral caption, no company name). Still to fill: `pitch-company` draft 15:00, `video-plan`, `video-narration`, `submit-line` at 15:40, `qa-build` 15:45, `submit-post2` and `pitch-hedge` 16:40.
+- Prompter: `submit-post1` filled 14:21 (neutral caption, no company name). Still to fill: `pitch-company` draft 15:00, `video-plan`, `video-narration`, `submit-line` at 15:40, `qa-build` 15:45, `submit-post2` and `pitch-hedge` 16:40.
 - Allowance: the 5-hour window resets at **15:10 IST**, not 14:05 (it read 64% used at 14:15). The Opus helper review of `core/` (planner, requisition, sets) waits until after 15:10; brief it with the pack rules above, the no-look-ahead test and the real numbers in README.
 - **15:45 feature stop. 16:44 last push. Nothing after 16:45.**
 
