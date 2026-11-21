@@ -95,3 +95,30 @@ def test_the_pooled_row_exists_but_is_not_listed_as_a_godown_flag():
     view = balance(make(starve_a_from=8), SETS, "P", "stated", judge=EVERY_PAIRING)
     assert POOLED in set(view.account["godown"])
     assert POOLED not in set(flagged(view)["godown"])
+
+
+def test_a_shared_child_is_never_judged_against_one_parent():
+    """Two parents share one child that goes out exactly in ratio for both together. Setting its total against a single
+    parent would show a surplus that is not there, so a shared child is left out of the set-by-set judgement."""
+    items = pd.DataFrame(
+        {"item_code": ["P1", "P2", "C"], "item_name": ["PARENT ONE", "PARENT TWO", "SHARED BOLT"], "unit": ["SET", "SET", "NOS"],
+         "lead_time_days": [60, 60, 60], "role": ["Parent", "Parent", "Child"]}
+    )
+    sets = pd.DataFrame(
+        {"set_no": [1.0, 2.0], "parent_code": ["P1", "P2"], "parent_name": ["PARENT ONE", "PARENT TWO"], "parent_unit": ["SET", "SET"],
+         "child_code": ["C", "C"], "child_name": ["SHARED BOLT", "SHARED BOLT"], "child_unit": ["NOS", "NOS"], "ratio_of_parent": [1.0, 1.0]}
+    )
+    rng = np.random.default_rng(3)
+    rows, used = [], []
+    for m in MONTHS:
+        p1, p2 = float(rng.integers(800, 1600)), float(rng.integers(800, 1600))
+        for code, q in (("P1", p1), ("P2", p2), ("C", p1 + p2)):
+            rows.append((code, "A", m, q * 3, 0, 0, q, 0))
+            used.append((code, m, q))
+    flows = pd.DataFrame(rows, columns=["item_code", "godown", "month", "received", "tr_in", "tr_out", "issue", "ret"])
+    ledger = build_ledger(flows, pd.DataFrame(used, columns=["item_code", "month", "used"]), items)
+    for parent in ("P1", "P2"):
+        view = balance(ledger, sets, parent, "stated", judge=("strong", "loose", "weak"))
+        assert view.judged["C"] is False
+        assert (view.account["severity"] == "").all()
+

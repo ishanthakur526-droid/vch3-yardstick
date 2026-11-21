@@ -4,8 +4,9 @@ A pole clamp is no use without its eye hook and bolts. If one member runs short,
 the rest is lying in the store. Two views, both per godown and month:
 
   BALANCE  a running account. For each child: sets' worth issued so far (child issued / ratio) against parents issued
-           so far. A gap is measured in months of that godown's usual set draw. Negative: the child is behind, so sets
-           wait for it. Positive: the child is ahead and piling up. 1.5 months off is "watch", 3 months is "serious".
+           so far. A gap is measured as a share of every set issued so far. Negative: the child is behind, so sets
+           wait for it. Positive: the child is ahead and piling up. 15% off is "watch", 30% is "serious". A child that
+           several sets share is not judged set by set.
   STUCK    for any month: how many sets' worth of each member is on hand, which member limits the set, and how much of
            the others is waiting on it.
 
@@ -89,7 +90,9 @@ def balance(ledger: Ledger, sets: pd.DataFrame, parent: str, basis: str = "obser
     cal = calibrate(ledger, sets)
     spec = cal[cal["parent_code"] == parent]
     children = list(spec["child_code"])
-    judged = {r.child_code: r.pairing in judge for r in spec.itertuples()}
+    # A child that several sets share (the G.I. bolts serve all three) is never judged against one parent: its issues cover every
+    # parent at once, so setting them against a single parent's issues would show a surplus that is not there.
+    judged = {r.child_code: (r.pairing in judge) and not r.shared for r in spec.itertuples()}
     members = [parent] + children
     ratios = {parent: 1.0, **{r.child_code: (r.observed if basis == "observed" else r.stated) for r in spec.itertuples()}}
     names = {parent: str(spec["parent_name"].iloc[0]), **dict(zip(spec["child_code"], spec["child_name"]))}

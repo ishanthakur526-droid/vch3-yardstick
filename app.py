@@ -26,15 +26,15 @@ def get_ledger():
 
 
 @st.cache_data(show_spinner=False)
-def run_replay(_ledger, code: str, takeover: int, window: int, safety: float):
-    return replay(_ledger, code, Settings(takeover=takeover, window=window, safety=safety))
+def run_replay(_ledger, code: str, takeover: int, window: int, safety: float, capped: bool = True, basis: str = "use"):
+    return replay(_ledger, code, Settings(takeover=takeover, window=window, safety=safety, capped=capped, basis=basis))
 
 
 @st.cache_data(show_spinner="Replaying all 16 items month by month…")
-def run_all(_ledger, takeover: int, window: int, safety: float) -> pd.DataFrame:
+def run_all(_ledger, takeover: int, window: int, safety: float, capped: bool = True, basis: str = "use") -> pd.DataFrame:
     rows = []
     for code in _ledger.items["item_code"]:
-        r = run_replay(_ledger, code, takeover, window, safety)
+        r = run_replay(_ledger, code, takeover, window, safety, capped, basis)
         s = r.summary
         rows.append(
             {
@@ -44,6 +44,7 @@ def run_all(_ledger, takeover: int, window: int, safety: float) -> pd.DataFrame:
                 "orders": s["orders_n"], "counts": counts(s),
                 "forecast_error": s["forecast_error"], "forecast_bias": s["forecast_bias"], "span": s["span_months"],
                 "months_served": s["months_served"], "eval_months": s["eval_months"],
+                "plan_recv": s["plan_received"], "real_recv": s["real_received"],
             }
         )
     return pd.DataFrame(rows)
@@ -91,7 +92,8 @@ _ok = _head[_head["counts"]]
 if len(_ok):
     st.success(
         f"**{len(_ok)} of {len(_head)} items** could have run on a median **{_ok['cut'].median():.0%} less idle stock**, with under "
-        f"{MAX_SHORTAGE_SHARE:.0%} of use left unsupplied. Open **Plan it** to replay any item month by month, or **Requisition** to turn a new tender's BOQ into a buy list."
+        f"{MAX_SHORTAGE_SHARE:.0%} of use left unsupplied, if the planner knew the project's total requirement and stock reached contractors as it was used. "
+        "**Plan it** replays any item month by month and shows what the saving depends on; **Requisition** turns a new tender's BOQ into a buy list."
     )
 
 section = st.segmented_control(
@@ -317,6 +319,38 @@ if section == "Plan it":
         hide_index=True,
     )
 
+    st.subheader("What the saving depends on")
+    st.markdown("The headline rests on two assumptions. Here is each one taken away, on all 16 items.")
+    scenarios = (
+        ("As above", True, "use"),
+        ("The planner does not know the project's total requirement", False, "use"),
+        ("Contractors keep drawing ahead of use, as they really did", True, "issues"),
+        ("Both taken away", False, "issues"),
+    )
+    pole_rows, sens = {}, []
+    for label, capped_, basis_ in scenarios:
+        d_ = run_all(ledger, takeover, window, safety, capped_, basis_)
+        ok_ = d_[d_["counts"]]
+        p_ = d_[d_["code"] == reqs.POLE_CODE].iloc[0]
+        pole_rows[(capped_, basis_)] = p_
+        sens.append(
+            {
+                "Scenario": label,
+                "Items that kept the site supplied": f"{len(ok_)} of {len(d_)}",
+                "Median cut in idle stock": f"{ok_['cut'].median():.0%}" if len(ok_) else "–",
+                "Poles: average idle stock, really → with the plan": f"{indian(p_['avg_real'])} → {indian(p_['avg_plan'])} ({-p_['cut']:+.0%})",
+                "Poles the plan buys (really bought)": f"{indian(p_['plan_recv'])} ({indian(p_['real_recv'])})",
+            }
+        )
+    st.dataframe(pd.DataFrame(sens), hide_index=True)
+    held = pole_rows[(True, "use")]["avg_real"] - pole_rows[(True, "issues")]["avg_real"]
+    st.caption(
+        "The first row is the headline. It assumes (1) the planner knows the project's total requirement, as a bill of quantities would tell it (the data has none, "
+        "so what the project really bought stands in), and (2) stock reaches contractors only as it is used. In reality contractors drew ahead of use: "
+        f"on poles they held about {indian(held)} on average. In the last two rows they keep doing that, so only godown stock is compared. "
+        "Take both assumptions away and, on poles, ordering by use alone no longer beats what happened."
+    )
+
     st.subheader("How good is the forecast? All 16 items, on this project's own history")
     fc = everything.dropna(subset=["forecast_error"]).sort_values("forecast_error")
     if len(fc):
@@ -355,7 +389,9 @@ if section == "Plan it":
             f"(the data has no bill of quantities).\n"
             f"- **Moves.** Stock above one godown's own need goes to a godown that would run short this month, before anything new is ordered. "
             f"Transfers are same-day in the records, so a move during the month is allowed too and is counted.\n"
-            f"- **No peeking.** The planner reads only months before the one it is deciding; the tests change the future and check nothing earlier moves.\n"
+            f"- **No peeking, with one stated exception.** The planner reads only months before the one it is deciding; the tests change the future and check nothing earlier moves. "
+            f"The exception is the cap on total buying: it is what the project really bought in all, standing in for the bill of quantities Lumino would know at the start. "
+            f"**What the saving depends on** shows the result without it.\n"
             f"- **First {takeover} months** run on what really arrived, because a forecast needs history. Orders landing within the first lead time after that "
             f"are inherited too. Scoring starts after that.\n"
             f"- **Use by godown is an estimate.** Lumino records use for the whole project only, so each month's use is split by what each godown handed out.\n"
@@ -434,14 +470,18 @@ if section == "Requisition":
         m1.metric("Items needed", sm["lines"], border=True)
         m2.metric("Already in stock", sm["covered"], border=True, help=f"Stock as at {stock_label}, the last month in the data.")
         m3.metric("To buy", sm["to_buy"], border=True)
-        m4.metric("Too late for the deadline", sm["late"], border=True, help="Usual lead time is longer than the days left.")
+        m4.metric("Too late for the deadline", sm["late"], border=True, help="Usual lead time, plus the days procurement needs to place the order, is longer than the days left.")
 
         late = req.lines[req.lines["kind"] == "late"]
         soon = req.lines[req.lines["kind"] == "order"]
         if len(late):
+            why = lambda r_: (
+                f"{r_.lead_days}-day lead time" if r_.lead_days > days_left
+                else f"{r_.lead_days}-day lead time plus {int(handoff)} days for procurement to place the order"
+            )
             st.warning(
-                "**Cannot arrive in time at the usual lead time:** "
-                + "; ".join(f"{short_item(r_.item, 40)} ({r_.lead_days} days)" for r_ in late.itertuples())
+                "**Cannot arrive in time:** "
+                + "; ".join(f"{short_item(r_.item, 40)} ({why(r_)})" for r_ in late.itertuples())
                 + f". Only {int(days_left)} days are left. Ask the vendor to expedite, or move stock between godowns."
             )
         elif len(soon):
@@ -558,7 +598,7 @@ if section == "Match the sets":
     c1, c2, c3 = st.columns([3, 2, 2])
     parent = c1.selectbox("Set", parents, format_func=lambda p: short_item(pnames[p], 60), key="set_parent")
     basis_label = c2.radio("Ratio to use", ["From real use", "As Lumino gave it"], key="set_basis")
-    loose = c3.checkbox("Also judge loosely paired items", value=False, help="Children whose use only loosely follows the parent's. Expect many flags.")
+    loose = c3.checkbox("Also judge loosely paired items", value=False, help="Children whose use only loosely follows the parent's. Expect many flags. Items that several sets share (the G.I. nuts and bolts) are never judged set by set.")
     view = run_balance(ledger, sets_table, parent, "observed" if basis_label == "From real use" else "stated", loose)
 
     judged_children = [c for c, j in (view.judged or {}).items() if j]
