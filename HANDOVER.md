@@ -1,6 +1,6 @@
 # HANDOVER (updated hourly)
 
-Last update: 14:58 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 14:13).
+Last update: 14:56 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 14:13).
 
 ## Where things stand
 - **Pick:** Lumino Industries, "1,700 Poles" (picked at 11:00). Product name: **Yardstick**.
@@ -36,6 +36,8 @@ Last update: 14:58 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 1
 - Done: Requisition (12:30), procurement days (13:26), forecast check (14:19). The live link passed `tests/smoke_live.py` at desktop and phone width after the 14:19 push. Cut: the mask switch (Lumino said real numbers are fine) and the Hindi store-keeper note (the store-keeper is not the user).
 - Prompter drafts filled 14:21 to 14:53 and revised for the two assumptions: `submit-post1` (neutral, no company name), `pitch-company`, `video-plan`, `video-narration`, `submit-line`, `qa-build`, `pitch-usp`, `me-data`, `me-howbuilt`. Still to do: re-check numbers at 15:45; `submit-post2` and `pitch-hedge` at 16:40; finals cards at 17:50.
 - Allowance: the 5-hour window resets at **15:10 IST**, not 14:05 (64% used at 14:15). One Opus helper run used (14:26). A second only for a bug that blocks the main flow.
+- Next, in order: 15:40 final video shot list and "what it does" line (re-check every number against the live app: poles 29,572 to 15,347, 13 of 16, median 54%, the four-row table, 1,700 poles and 90 days giving 16 items, 13 in stock, 3 to buy, 1 late); 16:10 Ishan approves the line; 16:20 the organisers' six-question check; 16:30 Ishan submits; 16:40 pitch final, post 2 caption and QR card; 17:50 finals cards and the follow-up note to Lumino (06-first-90-days.md is written for the old TenderLens plan: rewrite it for Yardstick).
+- After any push run `python tests/smoke_live.py <url>`; if `core/` changed, bump the comment in `requirements.txt` in the same commit.
 - **15:45 feature stop. 16:44 last push. Nothing after 16:45.**
 
 ## If Claude is unavailable
