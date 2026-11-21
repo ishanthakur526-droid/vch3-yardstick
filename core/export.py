@@ -9,6 +9,7 @@ import pandas as pd
 from . import explain
 from .fmt import month_label
 from .planner import MAX_SHORTAGE_SHARE, Replay, Settings
+from .requisition import BASES, POLE, Requisition
 
 
 def assumptions(r: Replay, name: str) -> list[str]:
@@ -60,5 +61,61 @@ def workbook(r: Replay, month: str, name: str, everything: pd.DataFrame) -> byte
                 ws.set_column(c, c, width, wrap if col in ("Why", "Action", "Item") else None)
             ws.freeze_panes(1, 0)
         pd.DataFrame({"Assumptions and limits": assumptions(r, name)}).to_excel(xl, sheet_name="Assumptions", index=False)
+        xl.sheets["Assumptions"].set_column(0, 0, 130, wrap)
+    return buf.getvalue()
+
+
+def requisition_assumptions(req: Requisition) -> list[str]:
+    held = "plus stock still with contractors" if req.with_contractors else "not counting stock still with contractors"
+    out = [
+        f"Stock in hand is as at {month_label(req.stock_month)}, the last month in the data: godown stock including the closing store, {held}.",
+        f"The material is needed on site by {req.needed_by:%d %b %Y} ({(req.needed_by - req.today).days} days from {req.today:%d %b %Y}). "
+        "Order by = that date minus the item's usual lead time; a line is 'too late' when that date has already passed.",
+        "A line typed on the BOQ is used as the requirement. Nothing here overrides it.",
+        f"Parts that come with a set (eye hooks, lugs, bolts) use the ratio {BASES[req.basis].lower()}. The sheet 'Ratio check' shows both, "
+        "because the data pack's ratios often disagree with what the site really used.",
+    ]
+    if (req.lines["source"] == POLE).any():
+        out.append("Items marked 'Per pole (site)' are estimates from what this project used per pole, not BOQ lines. Replace them with the BOQ's own figures.")
+    out += [
+        "Items bought in whole units are rounded up.",
+        "The data has no prices and no orders still on the way, so open orders are not taken off the buy list.",
+        "Source data: Lumino Industries Limited, shared by Calcutta AI Club for Vibe Coders Hackathon 3. Planning support, not an instruction to buy.",
+    ]
+    return out
+
+
+def requisition_workbook(req: Requisition) -> bytes:
+    """One .xlsx for head-office procurement: the buy list, where the ratios disagree, and the assumptions."""
+    lines = req.lines
+    buy = pd.DataFrame(
+        {
+            "Item": lines["item"], "Unit": lines["unit"], "Needed": lines["needed"], "Where the number comes from": lines["source"],
+            "In godowns": lines["in_godowns"], "With contractors": lines["with_contractors"], "To buy": lines["buy"],
+            "Lead time (days)": lines["lead_days"],
+            "Order by": [f"{d:%d %b %Y}" if k != "covered" else "" for d, k in zip(lines["order_by"], lines["kind"])],
+            "Status": lines["status"],
+        }
+    )
+    derived = lines[lines["at_file"].notna()]
+    check = pd.DataFrame(
+        {
+            "Item": derived["item"], "Unit": derived["unit"], "Needed at the file's ratio": derived["at_file"],
+            "Needed at the site's ratio": derived["at_site"], "What it says": derived["check"],
+        }
+    )
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as xl:
+        book = xl.book
+        wrap = book.add_format({"text_wrap": True, "valign": "top"})
+        head = book.add_format({"bold": True, "bg_color": "#EDE9FE", "border": 1, "text_wrap": True, "valign": "top"})
+        for title, df in (("Buy list", buy), ("Ratio check", check)):
+            df.to_excel(xl, sheet_name=title, index=False, startrow=1, header=False)
+            ws = xl.sheets[title]
+            for c, col in enumerate(df.columns):
+                ws.write(0, c, col, head)
+                ws.set_column(c, c, 60 if col == "What it says" else (46 if col == "Item" else 18), wrap if col in ("Item", "What it says") else None)
+            ws.freeze_panes(1, 0)
+        pd.DataFrame({"Assumptions and limits": requisition_assumptions(req)}).to_excel(xl, sheet_name="Assumptions", index=False)
         xl.sheets["Assumptions"].set_column(0, 0, 130, wrap)
     return buf.getvalue()
