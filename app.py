@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from core import charts, explain, sets as setcheck
+from core import charts, explain, export, sets as setcheck
 from core.bundle import load_tables
 from core.fmt import indian, month_label, short_godown, short_item
 from core.ledger import build_ledger, data_notes, item_grid, item_site, ledger_table, overview, peak_idle
@@ -203,6 +203,12 @@ with tab_plan:
               help=f"Stock moved instead of newly ordered. {s['moves_planned_n']} planned at the start of a month "
                    f"({indian(s['moves_planned_qty'])} {unit}), {s['moves_n'] - s['moves_planned_n']} during the month to cover a godown that ran out.")
 
+    if pd.notna(s["forecast_error"]):
+        st.caption(
+            f"Forecast check: over the {s['span_months']} months an order has to cover, the forecast was off by {s['forecast_error']:.0%} of what the site "
+            f"really used ({'high' if s['forecast_bias'] > 0 else 'low'} by {abs(s['forecast_bias']):.0%} overall). The site was fully supplied in "
+            f"{s['months_served']} of {s['eval_months']} scored months."
+        )
     st.plotly_chart(charts.replay_chart(r.monthly, r.settings.takeover, r.eval_start, unit))
 
     st.subheader("What the planner says, one month at a time")
@@ -226,11 +232,18 @@ with tab_plan:
             "Why": st.column_config.TextColumn(width="large"),
         },
     )
-    st.download_button(
+    d1, d2, _ = st.columns([1, 1, 3])
+    d1.download_button(
         "Download this month's list (CSV)",
         plan_now.to_csv(index=False).encode("utf-8"),
         file_name=f"yardstick_{code}_{month}_plan.csv",
         mime="text/csv",
+    )
+    d2.download_button(
+        "Download the plan (Excel)",
+        export.workbook(r, month, short_item(names[code], 80), run_all(ledger, takeover, window, safety)),
+        file_name=f"yardstick_{code}_{month}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
     st.subheader("Month by month: the plan against what happened")

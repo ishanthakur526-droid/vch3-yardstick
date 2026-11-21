@@ -241,6 +241,7 @@ def replay(ledger: Ledger, code: str, settings: Settings = Settings()) -> Replay
         lead=lead, step=unit_step(unit), settings=settings,
     )
     monthly["used"] = used
+    monthly["forecast"] = by_godown.groupby("month", sort=True)["forecast_use"].sum().reindex(months).to_numpy()
     monthly["real_arrived"] = site["received"].to_numpy()
     monthly["real_idle"] = site["idle_total"].to_numpy()
     monthly["real_in_godowns"] = site["godown_stock"].to_numpy()
@@ -251,11 +252,11 @@ def replay(ledger: Ledger, code: str, settings: Settings = Settings()) -> Replay
     return Replay(
         code=code, unit=unit, lead_months=lead, settings=settings, months=months, godowns=working, eval_start=eval_start,
         monthly=monthly, by_godown=by_godown, moves=move_df,
-        summary=summarise(monthly, by_godown, move_df, eval_start, float(received.sum()), unit_step(unit)),
+        summary=summarise(monthly, by_godown, move_df, eval_start, float(received.sum()), unit_step(unit), lead),
     )
 
 
-def summarise(monthly: pd.DataFrame, by_godown: pd.DataFrame, moves: pd.DataFrame, eval_start: int, requirement: float, step: float = 1.0) -> dict:
+def summarise(monthly: pd.DataFrame, by_godown: pd.DataFrame, moves: pd.DataFrame, eval_start: int, requirement: float, step: float = 1.0, lead: int = 1) -> dict:
     """Scores over the months the planner's own orders could affect (from `eval_start`)."""
     ev = monthly.iloc[eval_start:]
     used_total = float(ev["used"].sum())
@@ -263,8 +264,21 @@ def summarise(monthly: pd.DataFrame, by_godown: pd.DataFrame, moves: pd.DataFram
     pr, pp = ev["real_idle"], ev["plan_idle"]
     avg_real, avg_plan = float(pr.mean()), float(pp.mean())
     gb = by_godown[by_godown["month"].isin(ev["month"])]
+    # What an order has to get right is the whole span it covers: the lead time plus this month. Score the forecast there.
+    f, u = monthly["forecast"].to_numpy(), monthly["used"].to_numpy()
+    span = lead + 1
+    starts = range(eval_start, len(u) - lead)
+    guess = np.array([f[t] * span for t in starts])
+    real_span = np.array([u[t:t + span].sum() for t in starts])
+    wape = float(np.abs(guess - real_span).sum() / real_span.sum()) if len(real_span) and real_span.sum() > 0 else float("nan")
+    bias = float((guess - real_span).sum() / real_span.sum()) if len(real_span) and real_span.sum() > 0 else float("nan")
     return {
         "eval_from": str(ev["month"].iloc[0]),
+        "eval_months": int(len(ev)),
+        "span_months": span,
+        "forecast_error": wape,   # how far the forecast was from what the next lead-time-plus-one months really used
+        "forecast_bias": bias,    # positive: the forecast ran high on the whole
+        "months_served": int(len(ev) - (ev["plan_shortage"] > 0.5 * step).sum()),
         "avg_real": avg_real,
         "avg_plan": avg_plan,
         "reduction": (1 - avg_plan / avg_real) if avg_real > 0 else 0.0,
