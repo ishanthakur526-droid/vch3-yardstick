@@ -1,17 +1,18 @@
 # HANDOVER (updated hourly)
 
-Last update: 13:30 IST, Sat 21 Nov 2026.
+Last update: 14:27 IST, Sat 21 Nov 2026 (fresh Sonnet 5.5 session took over at 14:13).
 
 ## Where things stand
 - **Pick:** Lumino Industries, "1,700 Poles" (picked at 11:00). Product name: **Yardstick**.
 - **Repo:** https://github.com/ishanthakur526-droid/vch3-yardstick (public, created 11:02 IST).
 - **Live app:** https://vch3-yardstick-mvluj7jtvsgdnkqbw8kuqh.streamlit.app/ (Ishan deployed it at about 12:05; repo `vch3-yardstick`, branch `main`, file `app.py`, Python 3.12, secret `LUMINO_BUNDLE`). Every push to `main` redeploys it. Check it with `python tests/smoke_live.py <url>`; on Streamlit Cloud the app sits in an iframe, so the script opens the `/~/+/` route. Run it after every push: at 13:26 the host kept an old `core/` module in memory and the Requisition screen showed a TypeError. Changing a comment in `requirements.txt` and pushing forced a clean rebuild (Manage app, Reboot app does the same).
-- **Built and tested (38 tests, all green):**
+- **Built and tested (42 tests, all green):**
   - `core/ledger.py` monthly ledger; `app.py` **See it** screen.
   - `core/planner.py` replay with no look-ahead, order/hold/move, purchase cap, shortage check; **Plan it** screen with reasons per godown and Excel export.
   - `core/sets.py` ratio check against real use and a per-godown running account; **Match the sets** screen.
   - `core/requisition.py` BOQ to buy list (BOQ line wins; set ratio from the file or the site; per-pole estimate; stock in hand at the last month; order-by from lead time); **Requisition** screen with Excel buy list and a BOQ upload (CSV or Excel). Added at 12:30 after the desk visit.
   - **Plan it** also shows what no spare stock would cost on a continuous plan: safety margin 0 keeps 5 of 16 items supplied, 1.0 keeps 9, the default 2.33 keeps 13.
+  - **Plan it** has a **forecast check for all 16 items** (pushed 14:19): at the start of each scored month the forecast is compared with the use over the months an order covers (lead time plus one). Median error 51% of real use; it leans high by a median 35% on purpose (the higher of the last 3 and last 6 months' average); the site was fully supplied in 506 of 512 scored item-months. Measured on 14:15: a plain 6-month average would be off by about 47% and "same as last month" by 55%, so **never claim the forecast beats a plain average**; say it is cautious on purpose and judged by the supply outcome.
 - **Headline (default settings):** 13 of 16 items keep shortage under 1% and cut average idle stock by a median 54%. Poles: 29,572 → 15,347 average idle, peak 48,991 → 32,490, no shortage.
 
 ## The data (never commit it)
@@ -29,8 +30,9 @@ Last update: 13:30 IST, Sat 21 Nov 2026.
 - Only children that follow their parent closely (monthly correlation 0.8+) are judged for set balance.
 
 ## Plan (times IST)
-- 12:30 Requisition pushed; confirm the live link after the redeploy; 13:15 phone click path for Lumino (type the poles, read the buy list, open the ratio table).
-- 13:15-15:00 accuracy panel, desk answers as data, a mask switch if Lumino says so. The Hindi store-keeper note is cut: the store-keeper is not the user.
+- Done: Requisition (12:30), procurement days (13:26), forecast check (14:19). The live link passed `tests/smoke_live.py` at desktop and phone width after the 14:19 push. Cut: the mask switch (Lumino said real numbers are fine) and the Hindi store-keeper note (the store-keeper is not the user).
+- Prompter: `submit-post1` filled 14:24 (neutral caption, no company name). Still to fill: `pitch-company` draft 15:00, `video-plan`, `video-narration`, `submit-line` at 15:40, `qa-build` 15:45, `submit-post2` and `pitch-hedge` 16:40.
+- Allowance: the 5-hour window resets at **15:10 IST**, not 14:05 (it read 64% used at 14:15). The Opus helper review of `core/` (planner, requisition, sets) waits until after 15:10; brief it with the pack rules above, the no-look-ahead test and the real numbers in README.
 - **15:45 feature stop. 16:44 last push. Nothing after 16:45.**
 
 ## If Claude is unavailable
