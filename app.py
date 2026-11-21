@@ -132,6 +132,11 @@ if section == "See it":
         f"contractors) while the site used **{indian(at_peak['used'])}** that month{cover_text}."
     )
 
+    # Five tiles in a row: a seven-digit quantity plus its unit must not be cut off with "…" on a laptop screen.
+    st.markdown(
+        "<style>[data-testid='stMetricValue'], [data-testid='stMetricValue'] * {font-size: clamp(1.25rem, 1.75vw, 2.25rem) !important;}</style>",
+        unsafe_allow_html=True,
+    )
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Arrived from vendors", f"{indian(row['received'])} {unit}", border=True)
     k2.metric("Actually used", f"{indian(row['used'])} {unit}", border=True)
@@ -481,15 +486,16 @@ if section == "Requisition":
             )
             st.warning(
                 "**Cannot arrive in time:** "
-                + "; ".join(f"{short_item(r_.item, 40)} ({why(r_)})" for r_ in late.itertuples())
+                + "; ".join(f"{short_item(r_.item, 80)}: {why(r_)}" for r_ in late.itertuples())
                 + f". Only {int(days_left)} days are left. Ask the vendor to expedite, or move stock between godowns."
             )
         elif len(soon):
             first = soon.sort_values("order_by").iloc[0]
             when = first["send_by"] if handoff else first["order_by"]
             st.info(
-                f"Everything to buy can still arrive in time. First {'list to procurement' if handoff else 'order'} date: "
-                f"**{when:%d %b}** ({short_item(first['item'], 40)})."
+                "Everything to buy can still arrive in time. "
+                + (f"The first buy list has to reach procurement by **{when:%d %b}**" if handoff else f"The first order has to go out by **{when:%d %b}**")
+                + f", for {short_item(first['item'], 80)}."
             )
         else:
             st.success("The stores already cover this BOQ. Nothing to buy.")
