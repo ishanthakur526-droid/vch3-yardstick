@@ -91,7 +91,7 @@ _ok = _head[_head["counts"]]
 if len(_ok):
     st.success(
         f"**{len(_ok)} of {len(_head)} items** could have run on a median **{_ok['cut'].median():.0%} less idle stock**, with under "
-        f"{MAX_SHORTAGE_SHARE:.0%} of use left unsupplied. Open **Plan it** to replay any item month by month."
+        f"{MAX_SHORTAGE_SHARE:.0%} of use left unsupplied. Open **Plan it** to replay any item month by month, or **Requisition** to turn a new tender's BOQ into a buy list."
     )
 
 section = st.segmented_control(
