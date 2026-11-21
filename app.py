@@ -8,10 +8,11 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from core import charts
+from core import charts, explain
 from core.bundle import load_tables
 from core.fmt import indian, month_label, short_godown, short_item
 from core.ledger import build_ledger, data_notes, item_grid, item_site, ledger_table, overview, peak_idle
+from core.planner import MAX_SHORTAGE_SHARE, Settings, counts, replay
 
 st.set_page_config(page_title="Yardstick · stock planner for Lumino", page_icon="📏", layout="wide")
 
@@ -22,6 +23,28 @@ def get_ledger():
     if tables is None:
         return None
     return build_ledger(tables["flows"], tables["used"], tables["items"]), tables["sets"]
+
+
+@st.cache_data(show_spinner=False)
+def run_replay(_ledger, code: str, takeover: int, window: int, safety: float):
+    return replay(_ledger, code, Settings(takeover=takeover, window=window, safety=safety))
+
+
+@st.cache_data(show_spinner="Replaying all 16 items month by month…")
+def run_all(_ledger, takeover: int, window: int, safety: float) -> pd.DataFrame:
+    rows = []
+    for code in _ledger.items["item_code"]:
+        r = run_replay(_ledger, code, takeover, window, safety)
+        s = r.summary
+        rows.append(
+            {
+                "code": code, "item": short_item(_ledger.item_name(code)), "unit": r.unit, "lead_days": int(_ledger.items.set_index("item_code").loc[code, "lead_time_days"]),
+                "avg_real": s["avg_real"], "avg_plan": s["avg_plan"], "cut": s["reduction"],
+                "peak_real": s["peak_real"], "peak_plan": s["peak_plan"], "short": s["shortage_pct"],
+                "orders": s["orders_n"], "counts": counts(s),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def decimals_for(unit: str) -> int:
@@ -61,7 +84,7 @@ st.caption(
     "built at Vibe Coders Hackathon 3"
 )
 
-tab_see, tab_about = st.tabs(["See it", "About the data"])
+tab_see, tab_plan, tab_about = st.tabs(["See it", "Plan it", "About the data"])
 
 # --------------------------------------------------------------------------------------------
 with tab_see:
@@ -138,6 +161,135 @@ with tab_see:
         }
     )
     st.dataframe(glance, hide_index=True)
+
+# --------------------------------------------------------------------------------------------
+with tab_plan:
+    names = dict(zip(ledger.items["item_code"], ledger.items["item_name"]))
+    codes = list(ledger.items["item_code"])
+    st.markdown(
+        "**Replay the project, month by month.** Each month the planner sees only what was known by then, and says what to "
+        "order, hold or move. Then its plan is put next to what really happened: how much less stock would have sat idle, "
+        "and any shortage it would have caused. A saving that starves the site does not count."
+    )
+    code = st.selectbox(
+        "Item",
+        codes,
+        index=codes.index("MPO010014") if "MPO010014" in codes else 0,
+        format_func=lambda c: f"{short_item(names[c])}  ·  {ledger.unit(c)}",
+        key="plan_item",
+    )
+    with st.expander("Planner settings"):
+        s1, s2, s3 = st.columns(3)
+        takeover = s1.slider("Months on the original plan first", 3, 18, 9, help="A forecast needs history. Until then the project runs on what really arrived.")
+        window = s2.slider("Months of use the forecast averages", 3, 12, 6)
+        safety = s3.slider("Safety margin (standard deviations)", 0.0, 4.0, 2.33, 0.1, help="Higher means fewer shortages and more idle stock.")
+
+    r = run_replay(ledger, code, takeover, window, safety)
+    s = r.summary
+    unit = r.unit
+    ok = counts(s)
+    kind, message = explain.verdict(r, ok)
+    getattr(st, kind)(message)
+
+    st.caption(f"Scored from {month_label(s['eval_from'])}, the first month the planner's own orders could land (lead time {r.lead_months} months).")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Average idle stock", f"{indian(s['avg_plan'])} {unit}", delta=f"{-s['reduction']:+.0%} vs {indian(s['avg_real'])} really", delta_color="inverse", border=True)
+    peak_change = (s["peak_plan"] / s["peak_real"] - 1) if s["peak_real"] > 0 else 0.0
+    m2.metric("Peak idle stock", f"{indian(s['peak_plan'])} {unit}", delta=f"{peak_change:+.0%} vs {indian(s['peak_real'])} really", delta_color="inverse", border=True)
+    m3.metric("Use it could not supply", f"{s['shortage_pct']:.2%}", delta=f"{s['months_short']} months short", delta_color="off", border=True,
+              help=f"Limit for the saving to count: {MAX_SHORTAGE_SHARE:.0%} of use.")
+    m4.metric("Orders placed", f"{s['orders_n']}", delta=f"{indian(s['orders_qty'])} {unit}", delta_color="off", border=True)
+    m5.metric("Moves between godowns", f"{s['moves_n']}", delta=f"{indian(s['moves_qty'])} {unit}", delta_color="off", border=True,
+              help=f"Stock moved instead of newly ordered. {s['moves_planned_n']} planned at the start of a month "
+                   f"({indian(s['moves_planned_qty'])} {unit}), {s['moves_n'] - s['moves_planned_n']} during the month to cover a godown that ran out.")
+
+    st.plotly_chart(charts.replay_chart(r.monthly, r.settings.takeover, r.eval_start, unit))
+
+    st.subheader("What the planner says, one month at a time")
+    planning_months = [m for i, m in enumerate(r.months) if i >= r.settings.takeover]
+    peak_month = s["peak_real_month"] if s["peak_real_month"] in planning_months else planning_months[0]
+    month = st.select_slider("Month", options=planning_months, value=peak_month, format_func=month_label, key="plan_month")
+    row = r.monthly[r.monthly["month"] == month].iloc[0]
+    st.caption(
+        f"In {month_label(month)} the project really received {indian(row['real_arrived'])} {unit} and the site used {indian(row['used'])}; "
+        f"{indian(row['real_idle'])} {unit} sat idle at month end. The planner, knowing only the months before, would have ordered "
+        f"{indian(row['plan_order'])} and ended with {indian(row['plan_idle'])} idle."
+    )
+    plan_now = explain.month_plan(r, month)
+    st.dataframe(
+        plan_now,
+        hide_index=True,
+        column_config={
+            "In stock": st.column_config.NumberColumn(format=f"%.{decimals_for(unit)}f"),
+            "Forecast use / month": st.column_config.NumberColumn(format=f"%.{decimals_for(unit)}f"),
+            "Action": st.column_config.TextColumn(width="medium"),
+            "Why": st.column_config.TextColumn(width="large"),
+        },
+    )
+    st.download_button(
+        "Download this month's list (CSV)",
+        plan_now.to_csv(index=False).encode("utf-8"),
+        file_name=f"yardstick_{code}_{month}_plan.csv",
+        mime="text/csv",
+    )
+
+    st.subheader("Month by month: the plan against what happened")
+    table = pd.DataFrame(
+        {
+            "Month": r.monthly["month"],
+            "Actually used": r.monthly["used"],
+            "Really arrived": r.monthly["real_arrived"],
+            "Really idle": r.monthly["real_idle"],
+            "Planner ordered": r.monthly["plan_order"],
+            "Plan: arrived": r.monthly["plan_arrived"],
+            "Plan: idle": r.monthly["plan_idle"],
+            "Plan: could not supply": r.monthly["plan_shortage"],
+        }
+    )
+    st.dataframe(table, hide_index=True, column_config=number_columns(table, unit), height=360)
+    st.download_button("Download the replay (CSV)", table.to_csv(index=False).encode("utf-8"), file_name=f"yardstick_{code}_replay.csv", mime="text/csv")
+
+    st.subheader("All 16 items, same settings")
+    everything = run_all(ledger, takeover, window, safety)
+    n_ok = int(everything["counts"].sum())
+    median_cut = float(everything.loc[everything["counts"], "cut"].median()) if n_ok else 0.0
+    st.markdown(
+        f"**{n_ok} of {len(everything)} items** kept the site supplied (under {MAX_SHORTAGE_SHARE:.0%} of use short). On those, the median "
+        f"cut in average idle stock is **{median_cut:.0%}**."
+    )
+    board = everything.sort_values("cut", ascending=False)
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Item": board["item"],
+                "Unit": board["unit"],
+                "Lead time (days)": board["lead_days"],
+                "Idle really (avg)": [indian(v) for v in board["avg_real"]],
+                "Idle with planner (avg)": [indian(v) for v in board["avg_plan"]],
+                "Cut": [f"{v:.0%}" for v in board["cut"]],
+                "Peak really": [indian(v) for v in board["peak_real"]],
+                "Peak with planner": [indian(v) for v in board["peak_plan"]],
+                "Short": [f"{v:.1%}" for v in board["short"]],
+                "Counts?": ["Yes" if c else "No: ran short" for c in board["counts"]],
+            }
+        ),
+        hide_index=True,
+    )
+
+    with st.expander("How this plan works, and what it assumes"):
+        st.markdown(
+            f"- **Orders.** Each month: forecast = the higher of the last 3 and last {window} months' average use. Cover = that forecast for the "
+            f"lead time plus this month, plus {safety:.2f} standard deviations of recent use as a safety margin. The order is whatever is missing after "
+            f"counting stock and orders already on the way. It never buys more in total than the project really bought "
+            f"(the data has no bill of quantities).\n"
+            f"- **Moves.** Stock above one godown's own need goes to a godown that would run short this month, before anything new is ordered. "
+            f"Transfers are same-day in the records, so a move during the month is allowed too and is counted.\n"
+            f"- **No peeking.** The planner reads only months before the one it is deciding; the tests change the future and check nothing earlier moves.\n"
+            f"- **First {takeover} months** run on what really arrived, because a forecast needs history. Orders landing within the first lead time after that "
+            f"are inherited too. Scoring starts after that.\n"
+            f"- **Use by godown is an estimate.** Lumino records use for the whole project only, so each month's use is split by what each godown handed out.\n"
+            f"- **Contractor-held stock** is part of the real idle figure. In the plan, contractors draw what the site uses, so none is held back."
+        )
 
 # --------------------------------------------------------------------------------------------
 with tab_about:

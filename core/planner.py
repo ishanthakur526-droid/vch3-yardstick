@@ -279,6 +279,8 @@ def summarise(monthly: pd.DataFrame, by_godown: pd.DataFrame, moves: pd.DataFram
         "orders_qty": float(gb["order"].sum()),
         "moves_n": int(len(moves[moves["month"].isin(ev["month"])])),
         "moves_qty": float(moves.loc[moves["month"].isin(ev["month"]), "qty"].sum()) if len(moves) else 0.0,
+        "moves_planned_n": int(((moves["month"].isin(ev["month"])) & (moves["when"] == "start of month")).sum()) if len(moves) else 0,
+        "moves_planned_qty": float(moves.loc[moves["month"].isin(ev["month"]) & (moves["when"] == "start of month"), "qty"].sum()) if len(moves) else 0.0,
         "requirement": requirement,
         "real_received": float(monthly["real_arrived"].sum()),
         "plan_received": float(monthly["plan_arrived"].sum()),
