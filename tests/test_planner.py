@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.bundle import find_blob, unpack  # noqa: E402
 from core.ledger import build_ledger  # noqa: E402
-from core.planner import MAX_SHORTAGE_SHARE, Settings, counts, replay, simulate  # noqa: E402
+from core.planner import MAX_SHORTAGE_SHARE, Settings, counts, replay, simulate, summarise  # noqa: E402
 
 MONTHS = [str(p) for p in pd.period_range("2024-01", periods=24, freq="M")]
 GODOWNS = ["A", "B", "C"]
@@ -162,3 +162,38 @@ def test_real_replay_does_not_use_the_future(ledger):
     b, _ = decisions(simulate(demand=shaken, **kw))
     upto = ledger.months[: t0 + 1]
     pd.testing.assert_frame_equal(a[a.month.isin(upto)].reset_index(drop=True), b[b.month.isin(upto)].reset_index(drop=True))
+
+
+def forecast_check(demand, lead=2):
+    """Run the simulator on a given demand and score the forecast the way the app does (lead time plus one months)."""
+    sc = scenario(lead=lead)
+    sc["demand"] = demand
+    monthly, by_godown, moves = simulate(**sc)
+    monthly["used"] = demand.sum(axis=1)
+    monthly["forecast"] = by_godown.groupby("month", sort=True)["forecast_use"].sum().reindex(MONTHS).to_numpy()
+    monthly["real_arrived"] = sc["inherited"].sum(axis=1)
+    monthly["real_idle"] = monthly["plan_idle"]
+    move_df = pd.DataFrame(moves, columns=["month", "when", "from", "to", "qty"])
+    return summarise(monthly, by_godown, move_df, eval_start=4 + lead, requirement=float(sc["inherited"].sum()), step=1.0, lead=lead)
+
+
+def test_forecast_check_is_exact_when_use_is_flat():
+    s = forecast_check(np.tile([50.0, 30.0, 10.0], (24, 1)))
+    assert s["span_months"] == 3
+    assert s["forecast_error"] == pytest.approx(0.0, abs=1e-9)
+    assert s["forecast_bias"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_forecast_check_shows_a_forecast_that_runs_low_when_use_rises():
+    rising = np.outer(np.linspace(20, 140, 24), [1.0, 0.6, 0.2])
+    s = forecast_check(rising)
+    assert s["forecast_error"] > 0.05
+    assert s["forecast_bias"] < 0  # trailing averages sit below a rising line, so the forecast ran low
+    assert s["forecast_error"] >= abs(s["forecast_bias"]) - 1e-9
+
+
+def test_forecast_check_shows_a_forecast_that_runs_high_when_use_falls():
+    falling = np.outer(np.linspace(140, 20, 24), [1.0, 0.6, 0.2])
+    s = forecast_check(falling)
+    assert s["forecast_bias"] > 0
+

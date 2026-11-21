@@ -22,6 +22,7 @@ Example on the real data: a BOQ of 1,700 poles needs 16 lines. 13 are already in
 ## Results (default settings, real data)
 - 13 of 16 items: median **54% less idle stock** with under 1% of use unsupplied.
 - Poles: average idle stock 29,572 → 15,347 (−48%), peak 48,991 → 32,490, zero shortage.
+- Forecast check, all 16 items: at the start of each scored month the forecast is compared with what the site really used over the months an order has to cover. It is off by a median 51% of real use and leans high by a median 35% on purpose (the higher of the last 3 and last 6 months' average). With that cushion the site was fully supplied in 506 of 512 scored item-months.
 - Honest limits: three items ran short and are marked "does not count"; the first 9 months run on the original plan because a forecast needs history; use per godown is estimated because Lumino records usage for the whole project only.
 - Only 1 of 8 stated set ratios agrees with real use (the eye hook). Ring lugs were used at 22 times the stated rate.
 
@@ -32,7 +33,7 @@ Example on the real data: a BOQ of 1,700 poles needs 16 lines. 13 are already in
 - `core/explain.py`, `core/export.py`: the reasons per godown and the Excel exports (the plan, and the buy list).
 - `core/requisition.py`: BOQ to buy list. Set ratios (file and site), per-pole estimates, stock in hand, lead times and order-by dates; every line says where its number came from.
 - `app.py`: the Streamlit screens. No logic in it.
-- `tests/`: 38 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
+- `tests/`: 42 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
 
 No AI model sits in the numbers: every figure is computed by code and can be traced to the records.
 

@@ -42,6 +42,8 @@ def run_all(_ledger, takeover: int, window: int, safety: float) -> pd.DataFrame:
                 "avg_real": s["avg_real"], "avg_plan": s["avg_plan"], "cut": s["reduction"],
                 "peak_real": s["peak_real"], "peak_plan": s["peak_plan"], "short": s["shortage_pct"],
                 "orders": s["orders_n"], "counts": counts(s),
+                "forecast_error": s["forecast_error"], "forecast_bias": s["forecast_bias"], "span": s["span_months"],
+                "months_served": s["months_served"], "eval_months": s["eval_months"],
             }
         )
     return pd.DataFrame(rows)
@@ -314,6 +316,36 @@ if section == "Plan it":
         ),
         hide_index=True,
     )
+
+    st.subheader("How good is the forecast? All 16 items, on this project's own history")
+    fc = everything.dropna(subset=["forecast_error"]).sort_values("forecast_error")
+    if len(fc):
+        served, scored = int(fc["months_served"].sum()), int(fc["eval_months"].sum())
+        lean = float(fc["forecast_bias"].median())
+        st.markdown(
+            f"At the start of each scored month the planner forecasts use. That forecast is then checked against what the site really used over the months "
+            f"an order has to cover (the lead time plus one). Across the {len(fc)} items it was off by a median **{fc['forecast_error'].median():.0%}** of real use "
+            f"and ran {'high' if lean > 0 else 'low'} by a median **{abs(lean):.0%}**. It leans high on purpose: it takes the higher of the last 3 and last {window} "
+            f"months' average, so one quiet month does not starve the site. With that cushion the site was fully supplied in **{served} of {scored}** item-months "
+            f"({served / scored:.0%})."
+        )
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Item": fc["item"],
+                    "Unit": fc["unit"],
+                    "Months an order covers": fc["span"],
+                    "Forecast off by (share of real use)": [f"{v:.0%}" for v in fc["forecast_error"]],
+                    "Runs": [f"{'high' if b > 0 else 'low'} by {abs(b):.0%}" for b in fc["forecast_bias"]],
+                    "Months fully supplied": [f"{a} of {b}" for a, b in zip(fc["months_served"], fc["eval_months"])],
+                }
+            ),
+            hide_index=True,
+        )
+        st.caption(
+            "Use on a construction project comes in lumps, so no forecast is exact month by month. The test that matters is the last column: "
+            "the plan re-forecasts every month, and the site did not run short."
+        )
 
     with st.expander("How this plan works, and what it assumes"):
         st.markdown(
