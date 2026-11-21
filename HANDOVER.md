@@ -5,7 +5,7 @@ Last update: 13:30 IST, Sat 21 Nov 2026.
 ## Where things stand
 - **Pick:** Lumino Industries, "1,700 Poles" (picked at 11:00). Product name: **Yardstick**.
 - **Repo:** https://github.com/ishanthakur526-droid/vch3-yardstick (public, created 11:02 IST).
-- **Live app:** https://vch3-yardstick-mvluj7jtvsgdnkqbw8kuqh.streamlit.app/ (Ishan deployed it at about 12:05; repo `vch3-yardstick`, branch `main`, file `app.py`, Python 3.12, secret `LUMINO_BUNDLE`). Every push to `main` redeploys it. Check it with `python tests/smoke_live.py <url>`; on Streamlit Cloud the app sits in an iframe, so the script opens the `/~/+/` route.
+- **Live app:** https://vch3-yardstick-mvluj7jtvsgdnkqbw8kuqh.streamlit.app/ (Ishan deployed it at about 12:05; repo `vch3-yardstick`, branch `main`, file `app.py`, Python 3.12, secret `LUMINO_BUNDLE`). Every push to `main` redeploys it. Check it with `python tests/smoke_live.py <url>`; on Streamlit Cloud the app sits in an iframe, so the script opens the `/~/+/` route. Run it after every push: at 13:26 the host kept an old `core/` module in memory and the Requisition screen showed a TypeError. Changing a comment in `requirements.txt` and pushing forced a clean rebuild (Manage app, Reboot app does the same).
 - **Built and tested (38 tests, all green):**
   - `core/ledger.py` monthly ledger; `app.py` **See it** screen.
   - `core/planner.py` replay with no look-ahead, order/hold/move, purchase cap, shortage check; **Plan it** screen with reasons per godown and Excel export.
