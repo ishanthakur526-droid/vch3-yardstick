@@ -197,3 +197,48 @@ def test_forecast_check_shows_a_forecast_that_runs_high_when_use_falls():
     s = forecast_check(falling)
     assert s["forecast_bias"] > 0
 
+
+def test_future_receipts_reach_the_planner_only_through_their_total():
+    """The cap on total buying is the one place the future enters (the project's real total stands in for the BOQ total).
+    Move future receipts to another month without changing the total and nothing changes; with no cap they do not matter at all."""
+    sc = scenario()
+    moved = sc["inherited"].copy()
+    moved[22] += moved[20]
+    moved[20] = 0.0                                   # same total, later month, well after the inherited months
+    pd.testing.assert_frame_equal(decisions(simulate(**sc))[0], decisions(simulate(**{**sc, "inherited": moved}))[0])
+
+    free = dict(sc, requirement=float("inf"))
+    bigger = sc["inherited"].copy()
+    bigger[22] += 5000.0
+    pd.testing.assert_frame_equal(decisions(simulate(**free))[0], decisions(simulate(**{**free, "inherited": bigger}))[0])
+
+
+def test_the_cap_binds_when_it_is_low_and_vanishes_when_removed():
+    sc = scenario()
+    sc["demand"] = sc["demand"] * 3                           # heavy use, so the planner has reason to order
+    already = float(sc["inherited"][: sc["settings"].takeover + sc["lead"]].sum())
+    capped = simulate(**dict(sc, requirement=already + 500.0))[0]
+    free = simulate(**dict(sc, requirement=float("inf")))[0]
+    assert capped["plan_arrived"].sum() < free["plan_arrived"].sum()
+
+
+@real
+def test_real_poles_saving_under_each_assumption(ledger):
+    """The numbers the Plan it screen shows under 'What the saving depends on' for poles, so they cannot drift unnoticed."""
+    code = "MPO010014"
+    base = replay(ledger, code).summary
+    nocap = replay(ledger, code, Settings(capped=False)).summary
+    godown = replay(ledger, code, Settings(basis="issues")).summary
+    assert base["avg_real"] == pytest.approx(29572, abs=1) and base["reduction"] == pytest.approx(0.48, abs=0.01)
+    assert nocap["reduction"] == pytest.approx(0.37, abs=0.01) and nocap["plan_received"] > base["plan_received"]
+    assert godown["avg_real"] == pytest.approx(18390, abs=1) and godown["reduction"] == pytest.approx(0.33, abs=0.01)
+
+
+@real
+def test_godown_basis_compares_like_with_like(ledger):
+    code = "MPO010014"
+    all_idle, godown = replay(ledger, code), replay(ledger, code, Settings(basis="issues"))
+    assert (godown.monthly["real_idle"] == godown.monthly["real_in_godowns"]).all()
+    assert (all_idle.monthly["real_idle"] >= godown.monthly["real_idle"] - 1e-9).all()      # contractors hold the difference
+    assert godown.monthly["used"].sum() >= all_idle.monthly["used"].sum() - 1e-6            # issues run ahead of use
+

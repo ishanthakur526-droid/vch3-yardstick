@@ -22,18 +22,22 @@ Example on the real data: a BOQ of 1,700 poles needs 16 lines. 13 are already in
 ## Results (default settings, real data)
 - 13 of 16 items: median **54% less idle stock** with under 1% of use unsupplied.
 - Poles: average idle stock 29,572 → 15,347 (−48%), peak 48,991 → 32,490, zero shortage.
+- **What that rests on** (shown on Plan it under "What the saving depends on", each assumption taken away in turn):
+  1. The planner knows the project's total requirement, as a bill of quantities would tell it. The data has none, so what the project really bought (1,17,050 poles) stands in, and the plan never orders past it. Without it: still 13 of 16 items and a median 54%, but poles fall to a 37% cut and the plan would buy 1,33,442 poles.
+  2. Stock reaches contractors only as it is used. In reality contractors drew ahead of use: on poles they held about 11,182 on average. If they keep doing that and only godown stock is compared: 7 of 16 items keep the site supplied, median cut 26%, poles 33%.
+  3. Take both away and ordering by use alone no longer beats what happened on poles (idle stock +4%).
 - Forecast check, all 16 items: at the start of each scored month the forecast is compared with what the site really used over the months an order has to cover. It is off by a median 51% of real use and leans high by a median 35% on purpose (the higher of the last 3 and last 6 months' average). With that cushion the site was fully supplied in 506 of 512 scored item-months.
 - Honest limits: three items ran short and are marked "does not count"; the first 9 months run on the original plan because a forecast needs history; use per godown is estimated because Lumino records usage for the whole project only.
 - Only 1 of 8 stated set ratios agrees with real use (the eye hook). Ring lugs were used at 22 times the stated rate.
 
 ## How it is built
 - `core/ledger.py`: the monthly ledger from the data pack's own two sums (godown stock, stock with contractors).
-- `core/planner.py`: the replay. At month *t* it reads only months before *t* (tests change the future and check nothing earlier moves). Orders cover lead time plus a month of forecast use plus a safety margin, never more in total than the project really bought; stock above one godown's need moves to a godown about to run short.
+- `core/planner.py`: the replay. At month *t* it reads only months before *t* (tests change the future and check nothing earlier moves), with one stated exception: the cap on total buying is what the project really bought in all, standing in for the BOQ total (a test pins that this is the only way future receipts reach it). Orders cover lead time plus a month of forecast use plus a safety margin, never more in total than the project really bought; stock above one godown's need moves to a godown about to run short.
 - `core/sets.py`: ratio calibration against real use, pairing strength, running account per godown.
 - `core/explain.py`, `core/export.py`: the reasons per godown and the Excel exports (the plan, and the buy list).
 - `core/requisition.py`: BOQ to buy list. Set ratios (file and site), per-pole estimates, stock in hand, lead times and order-by dates; every line says where its number came from.
 - `app.py`: the Streamlit screens. No logic in it.
-- `tests/`: 42 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
+- `tests/`: 46 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
 
 No AI model sits in the numbers: every figure is computed by code and can be traced to the records.
 

@@ -43,6 +43,9 @@ class Settings:
     window: int = 6        # months of recent use the forecast averages
     sd_window: int = 12    # months of recent use the safety margin is measured on
     safety: float = 2.33   # safety margin in standard deviations (about a 99% service level on a normal curve)
+    capped: bool = True    # never order more in total than the project really bought (the stand-in for the BOQ total)
+    basis: str = "use"     # "use": plan on what the site used, contractors draw only that, compare with ALL idle stock.
+                           # "issues": plan on what the godowns really handed out, compare with godown stock only
 
 
 @dataclass
@@ -233,17 +236,23 @@ def replay(ledger: Ledger, code: str, settings: Settings = Settings()) -> Replay
 
     site = item_site(ledger, code).set_index("month").reindex(months)
     used = site["used"].to_numpy()
-    demand = used[:, None] * allocation_shares(matrix("net_issue"))
     received = matrix("received")
+    like_for_like = settings.basis == "issues"
+    if like_for_like:
+        # What the godowns really handed out, so contractors keep holding what they really held: compare godown stock with godown stock.
+        demand = np.clip(matrix("net_issue"), 0.0, None)
+    else:
+        demand = used[:, None] * allocation_shares(matrix("net_issue"))
 
     monthly, by_godown, moves = simulate(
-        months=months, godowns=working, demand=demand, inherited=received, requirement=float(received.sum()),
+        months=months, godowns=working, demand=demand, inherited=received,
+        requirement=float(received.sum()) if settings.capped else float("inf"),
         lead=lead, step=unit_step(unit), settings=settings,
     )
-    monthly["used"] = used
+    monthly["used"] = demand.sum(axis=1) if like_for_like else used
     monthly["forecast"] = by_godown.groupby("month", sort=True)["forecast_use"].sum().reindex(months).to_numpy()
     monthly["real_arrived"] = site["received"].to_numpy()
-    monthly["real_idle"] = site["idle_total"].to_numpy()
+    monthly["real_idle"] = (site["godown_stock"] if like_for_like else site["idle_total"]).to_numpy()
     monthly["real_in_godowns"] = site["godown_stock"].to_numpy()
     monthly["real_with_contractors"] = site["with_contractors"].to_numpy()
 
