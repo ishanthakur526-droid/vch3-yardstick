@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from core import charts, explain, export, sets as setcheck
+from core import charts, explain, export, requisition as reqs, sets as setcheck
 from core.bundle import load_tables
 from core.fmt import indian, month_label, short_godown, short_item
 from core.ledger import build_ledger, data_notes, item_grid, item_site, ledger_table, overview, peak_idle
@@ -93,7 +93,7 @@ if len(_ok):
     )
 
 section = st.segmented_control(
-    "Section", ["See it", "Plan it", "Match the sets", "About the data"], default="See it", required=True, key="section",
+    "Section", ["See it", "Plan it", "Requisition", "Match the sets", "About the data"], default="See it", required=True, key="section",
     label_visibility="collapsed",
 )
 
@@ -194,6 +194,25 @@ if section == "Plan it":
         takeover = s1.slider("Months on the original plan first", 3, 18, 9, help="A forecast needs history. Until then the project runs on what really arrived.")
         window = s2.slider("Months of use the forecast averages", 3, 12, 6)
         safety = s3.slider("Safety margin (standard deviations)", 0.0, 4.0, 2.33, 0.1, help="Higher means fewer shortages and more idle stock.")
+
+    with st.expander("Lumino keeps no spare stock. What would that cost on a continuous plan?"):
+        trade = []
+        for label, k in (("No spare stock (0)", 0.0), ("Light cushion (1.0)", 1.0), (f"This screen's setting ({safety:.2f})", safety)):
+            d = run_all(ledger, takeover, window, k)
+            ok_ = d[d["counts"]]
+            trade.append(
+                {
+                    "Safety margin": label,
+                    "Items that kept the site supplied": f"{len(ok_)} of {len(d)}",
+                    "Median cut in idle stock": f"{ok_['cut'].median():.0%}" if len(ok_) else "–",
+                    "Worst shortage (share of use)": f"{d['short'].max():.1%}",
+                }
+            )
+        st.dataframe(pd.DataFrame(trade), hide_index=True)
+        st.caption(
+            "A plan that orders exactly the forecast runs short in every month that comes in above it, and use varies from month to month. The safety margin pays for "
+            "that. When the quantity is fixed by a bill of quantities there is nothing to forecast, so no spare stock is the right rule: see **Requisition**."
+        )
 
     r = run_replay(ledger, code, takeover, window, safety)
     s = r.summary
@@ -309,6 +328,146 @@ if section == "Plan it":
             f"are inherited too. Scoring starts after that.\n"
             f"- **Use by godown is an estimate.** Lumino records use for the whole project only, so each month's use is split by what each godown handed out.\n"
             f"- **Contractor-held stock** is part of the real idle figure. In the plan, contractors draw what the site uses, so none is held back."
+        )
+
+# --------------------------------------------------------------------------------------------
+if section == "Requisition":
+    codes = [c for c in ledger.items["item_code"] if c != reqs.POLE_CODE]
+    names = dict(zip(ledger.items["item_code"], ledger.items["item_name"]))
+    st.markdown(
+        "**Type the BOQ, get the buy list.** Head-office procurement starts from the bill of quantities: how many poles, plus any other lines "
+        "the tender lists. Yardstick works out every part that is needed, takes away what is already in the stores, and lists what to buy and "
+        "the last day to order each item so the deadline holds."
+    )
+    b1, b2 = st.columns(2)
+    poles = b1.number_input(
+        "Poles on the BOQ", min_value=0, max_value=500000, value=1700, step=100, key="boq_poles",
+        help="1,700 is an example, the size named in the problem statement. Type the real number from the tender.",
+    )
+    days_left = b2.number_input(
+        "Days until the material must be on site", min_value=7, max_value=720, value=90, step=7, key="boq_days",
+        help="Each item's usual lead time is taken off this to give its order-by date.",
+    )
+
+    with st.expander("More BOQ lines (optional): anything entered here is used as the requirement"):
+        grid = pd.DataFrame(
+            {"Item": [short_item(names[c]) for c in codes], "Unit": [ledger.unit(c) for c in codes], "BOQ quantity": [None] * len(codes)}
+        )
+        lines_in = st.data_editor(
+            grid, hide_index=True, disabled=["Item", "Unit"], key="boq_lines",
+            column_config={"BOQ quantity": st.column_config.NumberColumn(min_value=0, help="Leave empty when the BOQ has no such line.")},
+        )
+        sheet = st.file_uploader("…or upload the BOQ (CSV or Excel with an item column and a quantity column)", type=["csv", "xlsx"], key="boq_file")
+        template = ledger.items[["item_code", "item_name", "unit"]].rename(columns={"item_code": "Item code", "item_name": "Item", "unit": "Unit"}).assign(Quantity="")
+        st.download_button("BOQ template (CSV)", template.to_csv(index=False).encode("utf-8"), file_name="yardstick_boq_template.csv", mime="text/csv")
+
+    boq = {reqs.POLE_CODE: float(poles)}
+    boq.update({c: float(q) for c, q in zip(codes, lines_in["BOQ quantity"]) if pd.notna(q) and q > 0})
+    if sheet is not None:
+        try:
+            table = pd.read_csv(sheet) if sheet.name.lower().endswith(".csv") else pd.read_excel(sheet)
+            from_sheet, unmatched = reqs.parse_boq(table, ledger.items)
+            boq.update(from_sheet)
+            st.caption(
+                f"Read {len(from_sheet)} lines from {sheet.name}; they replace the lines above."
+                + (f" Not recognised: {', '.join(unmatched[:5])}." if unmatched else "")
+            )
+        except Exception as err:  # a bad file must not break the page
+            st.error(f"Could not read that file: {err}")
+
+    with st.expander("How the parts are worked out"):
+        basis = st.radio(
+            "Parts that come with a set (eye hooks, lugs, bolts) use the ratio…", list(reqs.BASES), format_func=reqs.BASES.get, horizontal=True, key="boq_basis",
+            help="Lumino's file and the site's real use often disagree (see Match the sets). Both are shown below whichever you pick.",
+        )
+        per_pole = st.checkbox(
+            "Estimate every other item from what this project used per pole", value=True, key="boq_per_pole",
+            help="Only for items the BOQ does not list, and only when poles are on the BOQ.",
+        )
+        held = st.checkbox("Count stock still with contractors as available", value=False, key="boq_held")
+
+    req = reqs.requisition(ledger, sets_table, boq, basis=basis, per_pole=per_pole, with_contractors=held, days_left=int(days_left))
+    stock_label = month_label(req.stock_month)
+    if req.unknown:
+        st.warning(f"Not items of this project, so left out: {', '.join(req.unknown)}.")
+    if req.lines.empty:
+        st.info("Enter the poles on the BOQ, or add BOQ lines, to see the buy list.")
+    else:
+        sm = reqs.summary(req)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Items needed", sm["lines"], border=True)
+        m2.metric("Already in stock", sm["covered"], border=True, help=f"Stock as at {stock_label}, the last month in the data.")
+        m3.metric("To buy", sm["to_buy"], border=True)
+        m4.metric("Too late for the deadline", sm["late"], border=True, help="Usual lead time is longer than the days left.")
+
+        late = req.lines[req.lines["kind"] == "late"]
+        soon = req.lines[req.lines["kind"] == "order"]
+        if len(late):
+            st.warning(
+                "**Cannot arrive in time at the usual lead time:** "
+                + "; ".join(f"{short_item(r_.item, 40)} ({r_.lead_days} days)" for r_ in late.itertuples())
+                + f". Only {int(days_left)} days are left. Ask the vendor to expedite, or move stock between godowns."
+            )
+        elif len(soon):
+            first = soon.sort_values("order_by").iloc[0]
+            st.info(f"Everything to buy can still arrive in time. First order date: **{first.order_by:%d %b}** ({short_item(first['item'], 40)}).")
+        else:
+            st.success("The stores already cover this BOQ. Nothing to buy.")
+
+        def qty(v: float, unit: str) -> str:
+            return indian(v, 2 if unit in ("MT", "KM") else 0)
+
+        ln = req.lines
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Item": [short_item(i, 46) for i in ln["item"]],
+                    "Unit": ln["unit"],
+                    "Needed": [qty(v, u) for v, u in zip(ln["needed"], ln["unit"])],
+                    "Where the number comes from": ln["source"],
+                    f"In stock ({stock_label})": [qty(v, u) for v, u in zip(ln["on_hand"], ln["unit"])],
+                    "To buy": [qty(v, u) if v > 0 else "–" for v, u in zip(ln["buy"], ln["unit"])],
+                    "Order by / status": ln["status"],
+                }
+            ),
+            hide_index=True,
+        )
+
+        derived = ln[ln["at_file"].notna()]
+        if len(derived):
+            st.subheader("Where Lumino's ratios and the site disagree")
+            st.caption(
+                "Parts that come with a set are worked out from the parent's quantity. Lumino's file and what the site really used often differ, so both "
+                "are shown. The BOQ line, when there is one, always wins."
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "Item": [short_item(i, 46) for i in derived["item"]],
+                        "Unit": derived["unit"],
+                        "Needed at the file's ratio": [qty(v, u) for v, u in zip(derived["at_file"], derived["unit"])],
+                        "Needed at the site's ratio": [qty(v, u) for v, u in zip(derived["at_site"], derived["unit"])],
+                        "What it says": derived["check"],
+                    }
+                ),
+                hide_index=True,
+            )
+
+        st.download_button(
+            "Download the buy list (Excel)",
+            export.requisition_workbook(req),
+            file_name="yardstick_buy_list.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    with st.expander("How this works, and what it assumes"):
+        st.markdown(
+            f"- **The BOQ is the requirement.** A line entered on the BOQ is used as it is. Everything else is worked out from it and labelled with where it came from: "
+            f"a set ratio (the file's, or the site's real use), or an estimate from what this project used per pole.\n"
+            f"- **Stock in hand** is the last month in the data ({stock_label}): every godown plus the closing store. Stock still with contractors is left out unless you tick the box.\n"
+            f"- **Order by** = the day the material is needed minus the item's usual lead time. If that day has passed, the line is marked too late.\n"
+            f"- **Not in the data:** a bill of quantities, prices, and orders still on the way. The 1,700 poles is an example figure, not a Lumino BOQ, and open orders are not taken off the buy list.\n"
+            f"- **Next:** read the BOQ straight from Lumino's ERP extract, which their ERP team already updates every day."
         )
 
 # --------------------------------------------------------------------------------------------

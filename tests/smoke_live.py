@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 SECTIONS = {
     "See it": ["Arrived from vendors", "Where it piled up", "All 16 items at a glance"],
     "Plan it": ["Average idle stock", "What the planner says, one month at a time", "Download the plan (Excel)"],
+    "Requisition": ["Items needed", "To buy", "Where Lumino's ratios and the site disagree", "Download the buy list (Excel)"],
     "Match the sets": ["agree with what the site really used", "Some items only work as a set"],
     "About the data": ["Where the numbers come from"],
 }
@@ -24,11 +25,15 @@ def main(url: str, mobile: bool) -> int:
         browser = p.chromium.launch()
         ctx = browser.new_context(viewport={"width": 390, "height": 844} if mobile else {"width": 1280, "height": 900})
         page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=120000)
+        # Streamlit Community Cloud shows the app inside an iframe served from /~/+/. Open that route so the app's own
+        # elements can be read; if the app asked for a sign-in, this route would show it instead of the app.
+        target = url.rstrip("/") + "/~/+/" if "streamlit.app" in url and "/~/+/" not in url else url
+        page.goto(target, wait_until="domcontentloaded", timeout=120000)
         try:
             page.wait_for_selector('[data-testid="stMetric"]', timeout=180000)
         except Exception:
             failures.append("the first screen never finished loading (or the app asked for a sign-in)")
+        page.wait_for_timeout(4000)   # the lower parts of the first screen draw after the first numbers
         body = page.inner_text("body")
         for must in ("Yardstick", "of 16 items", "48,991"):
             if must not in body:
@@ -61,6 +66,15 @@ def main(url: str, mobile: bool) -> int:
         if not name.endswith(".xlsx"):
             failures.append(f"Excel download has an odd name: {name}")
         print("Excel download:", name)
+
+        page.locator('[data-testid="stButtonGroup"] button', has_text="Requisition").first.click()
+        page.wait_for_timeout(2500)
+        with page.expect_download(timeout=30000) as dl2:
+            page.get_by_text("Download the buy list (Excel)").first.click()
+        name2 = dl2.value.suggested_filename
+        if not name2.endswith(".xlsx"):
+            failures.append(f"Buy list download has an odd name: {name2}")
+        print("Buy list download:", name2)
         browser.close()
 
     if failures:
