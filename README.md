@@ -37,7 +37,7 @@ Example on the real data: a BOQ of 1,700 poles needs 16 lines. 13 are already in
 - `core/explain.py`, `core/export.py`: the reasons per godown and the Excel exports (the plan, and the buy list).
 - `core/requisition.py`: BOQ to buy list. Set ratios (file and site), per-pole estimates, stock in hand, lead times and order-by dates; every line says where its number came from.
 - `app.py`: the Streamlit screens. No logic in it.
-- `tests/`: 46 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
+- `tests/`: 47 tests on made-up scenarios with known answers and, when the data is present, on Lumino's real numbers.
 
 No AI model sits in the numbers: every figure is computed by code and can be traced to the records.
 
