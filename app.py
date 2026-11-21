@@ -84,10 +84,21 @@ st.caption(
     "built at Vibe Coders Hackathon 3"
 )
 
-tab_see, tab_plan, tab_sets, tab_about = st.tabs(["See it", "Plan it", "Match the sets", "About the data"])
+_head = run_all(ledger, Settings().takeover, Settings().window, Settings().safety)
+_ok = _head[_head["counts"]]
+if len(_ok):
+    st.success(
+        f"**{len(_ok)} of {len(_head)} items** could have run on a median **{_ok['cut'].median():.0%} less idle stock**, with under "
+        f"{MAX_SHORTAGE_SHARE:.0%} of use left unsupplied. Open **Plan it** to replay any item month by month."
+    )
+
+section = st.segmented_control(
+    "Section", ["See it", "Plan it", "Match the sets", "About the data"], default="See it", required=True, key="section",
+    label_visibility="collapsed",
+)
 
 # --------------------------------------------------------------------------------------------
-with tab_see:
+if section == "See it":
     names = dict(zip(ledger.items["item_code"], ledger.items["item_name"]))
     codes = list(ledger.items["item_code"])
     ov = overview(ledger)
@@ -163,7 +174,7 @@ with tab_see:
     st.dataframe(glance, hide_index=True)
 
 # --------------------------------------------------------------------------------------------
-with tab_plan:
+if section == "Plan it":
     names = dict(zip(ledger.items["item_code"], ledger.items["item_name"]))
     codes = list(ledger.items["item_code"])
     st.markdown(
@@ -222,16 +233,12 @@ with tab_plan:
         f"{indian(row['plan_order'])} and ended with {indian(row['plan_idle'])} idle."
     )
     plan_now = explain.month_plan(r, month)
-    st.dataframe(
-        plan_now,
-        hide_index=True,
-        column_config={
-            "In stock": st.column_config.NumberColumn(format=f"%.{decimals_for(unit)}f"),
-            "Forecast use / month": st.column_config.NumberColumn(format=f"%.{decimals_for(unit)}f"),
-            "Action": st.column_config.TextColumn(width="medium"),
-            "Why": st.column_config.TextColumn(width="large"),
-        },
-    )
+    cards = st.columns(2)
+    for i, row_ in enumerate(plan_now.to_dict("records")):
+        with cards[i % 2].container(border=True):
+            st.markdown(f"**{row_['Godown']}**  ·  {row_['Action']}")
+            st.caption(f"In stock {indian(row_['In stock'])} {unit}  ·  expects about {indian(row_['Forecast use / month'])} a month")
+            st.write(row_["Why"])
     d1, d2, _ = st.columns([1, 1, 3])
     d1.download_button(
         "Download this month's list (CSV)",
@@ -315,7 +322,7 @@ def run_balance(_ledger, sets_table: pd.DataFrame, parent: str, basis: str, loos
     return setcheck.balance(_ledger, sets_table, parent, basis, judge=("strong", "loose") if loose else ("strong",))
 
 
-with tab_sets:
+if section == "Match the sets":
     cal = run_calibration(ledger, sets_table)
     n_pairs, n_agree = len(cal), int(cal["agrees"].sum())
     st.markdown(
@@ -422,7 +429,7 @@ with tab_sets:
         )
 
 # --------------------------------------------------------------------------------------------
-with tab_about:
+if section == "About the data":
     notes = data_notes(ledger)
     st.subheader("Where the numbers come from")
     st.markdown(
